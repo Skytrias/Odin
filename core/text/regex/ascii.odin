@@ -97,7 +97,7 @@ compile_ascii :: proc(pattern: string) -> (compiled: Compiled_ASCII, err: Error)
 			/*
 				Eat the `[` and decode the next character.
 			*/
-			if len(buf) == 0 {
+			if len(buf) <= 1 {
 				/* '['' as last char in pattern -> invalid regular expression. */
 				return {}, .Pattern_Ended_Unexpectedly
 			}
@@ -117,7 +117,7 @@ compile_ascii :: proc(pattern: string) -> (compiled: Compiled_ASCII, err: Error)
 				*/
 				compiled.objects[j].type = .Inverse_Character_Class
 
-				if len(buf) == 0 {
+				if len(buf) <= 1 {
 					/* '^' as last char in pattern -> invalid regular expression. */
 					return {}, .Pattern_Ended_Unexpectedly
 				}
@@ -145,7 +145,7 @@ compile_ascii :: proc(pattern: string) -> (compiled: Compiled_ASCII, err: Error)
 					compiled.classes[ccl_buf_idx].c = char
 					ccl_buf_idx += 1
 
-					if len(buf) == 0 {
+					if len(buf) <= 1 {
 						/* '\\' as last char in pattern -> invalid regular expression. */
 						return {}, .Pattern_Ended_Unexpectedly
 					}
@@ -219,7 +219,7 @@ match_compiled_ascii :: proc(pattern: Compiled_ASCII, haystack: string, options 
 	if objects[0].type != .Sentinel {
 		if objects[0].type == .Begin {
 			e := match_pattern_ascii(pattern, objects[1:], buf, &l, options)
-			return 0, length, e
+			return 0, l, e
 		} else {
 			for _, byte_idx in haystack {
 				l = 0

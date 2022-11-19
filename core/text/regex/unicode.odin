@@ -133,7 +133,7 @@ compile_utf8 :: proc(pattern: string) -> (compiled: Compiled_UTF8, err: Error) {
 				}
 
 				if char == '\\' {
-					if len(buf) == 0 {
+					if len(buf) <= 1 {
 						return {}, .Pattern_Ended_Unexpectedly  // Expected an escaped character
 					}
 
@@ -144,8 +144,8 @@ compile_utf8 :: proc(pattern: string) -> (compiled: Compiled_UTF8, err: Error) {
 					compiled.classes[ccl_buf_idx] = char
 					ccl_buf_idx += 1
 
-						buf = buf[1:]
-						char, rune_size = utf8.decode_rune(buf)				
+					buf = buf[1:]
+					char, rune_size = utf8.decode_rune(buf)				
 				}
 
 				if char == ']' {

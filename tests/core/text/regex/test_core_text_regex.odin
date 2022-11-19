@@ -16,12 +16,12 @@ when ODIN_TEST {
 		TEST_count += 1
 		if !condition {
 			TEST_fail += 1
-			fmt.printf("[%v] %v\n", loc, message)
+			fmt.printf("%v %v\n", loc, message)
 			return
 		}
 	}
 	log     :: proc(t: ^testing.T, v: any, loc := #caller_location) {
-		fmt.printf("[%v] ", loc)
+		fmt.printf("%v ", loc)
 		fmt.printf("log: %v\n", v)
 	}
 }
@@ -52,8 +52,9 @@ ASCII_Cases := [?]Test_Entry {
 	{ "[Hh]ello [Ww]orld", "Hello world", 0, 11, .OK },
 	{ "[Hh]ello [Ww]orld", "hello world", 0, 11, .OK },
 	{ "[Hh]ello [Ww]orld", "hello World", 0, 11, .OK },
-	{ "[aabc", "a", 0, 0, .Pattern_Ended_Unexpectedly },
-	// { "[aabc]", "H", 0, 1, .OK },
+	{ "[aabc", "a", 0, 0, .Pattern_Ended_Unexpectedly }, // check early ending
+	{ "[", "a", 0, 0, .Pattern_Ended_Unexpectedly }, // check early ending
+	{ "[\\\\]", "\\", 0, 1, .OK }, // check early ending
 
 	// escaped chars
 	{ "\\", "\\", 0, 0, .Pattern_Ended_Unexpectedly },
@@ -88,13 +89,22 @@ ASCII_Cases := [?]Test_Entry {
 	{ "\\S", "a", 0, 1, .OK },
 	{ "\\S", " ", 0, 0, .No_Match },
 	{ "\\S\\S\\S", "abc", 0, 3, .OK },
+
+	// inverse class
+	{ "[^a]", "0", 0, 1, .OK },
+	{ "[^a]", "a", 0, 0, .No_Match },
+	{ "[^a]", "A", 0, 1, .OK },
+	{ "[^", "", 0, 0, .Pattern_Ended_Unexpectedly }, // check early ending
+
+	//	meta characters
+	{ "^test", "test", 0, 4, .OK },
 }
 
 @test
 test_ascii_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Cases {
 		pos, length, err := regex.match_string_ascii(entry.pattern, entry.haystack)
-		// fmt.eprintln(entry, pos, length, err)
+		fmt.eprintln(entry, pos, length, err)
 		expect(t, err == entry.err, "Regex: wrong error result")
 		expect(t, pos == entry.pos, "Regex: wrong entry position found")
 		expect(t, length == entry.length, "Regex: wrong entry length found")
