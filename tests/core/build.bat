@@ -72,6 +72,11 @@ echo ---
 %PATH_TO_ODIN% run text\i18n %COMMON% -out:test_core_i18n.exe
 
 echo ---
+echo Running core:text/regex tests
+echo ---
+%PATH_TO_ODIN% run text\regex %COMMON% -out:test_core_regex.exe
+
+echo ---
 echo Running core:slice tests
 echo ---
 %PATH_TO_ODIN% run slice %COMMON% -out:test_core_slice.exe

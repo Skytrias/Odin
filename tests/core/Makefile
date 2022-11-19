@@ -49,5 +49,9 @@ os_exit_test:
 i18n_test:
 	$(ODIN) run text/i18n -out:test_core_i18n
 
+# regex_test:
+build:
+	$(ODIN) run text/regex -out:test_core_regex
+
 c_libc_test:
 	$(ODIN) run c/libc -out:test_core_libc
