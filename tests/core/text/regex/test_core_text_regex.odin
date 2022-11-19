@@ -97,7 +97,18 @@ ASCII_Cases := [?]Test_Entry {
 	{ "[^", "", 0, 0, .Pattern_Ended_Unexpectedly }, // check early ending
 
 	//	meta characters
+	
+	// begin
 	{ "^test", "test", 0, 4, .OK },
+	{ "test", "xtest", 1, 4, .OK },
+	{ "^test", "xtest", 0, 0, .No_Match },
+	{ "^", "test", 0, 0, .OK }, // TODO expected result?
+
+	// end
+	{ "$", "", 0, 0, .No_Match },
+	{ "$", "test", 0, 0, .No_Match },
+	{ "test$", "test", 0, 4, .OK },
+	{ "test$", "test", 0, 4, .OK },
 }
 
 @test
