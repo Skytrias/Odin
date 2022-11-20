@@ -160,8 +160,27 @@ UTF8_Specific_Cases := [?]Test_Entry {
 	{ "ずべきフクロ", "恥ずべきフクロ", { 3, 1, 6 }, .OK },
 	
 	// different sizes
-	{ "ö", "a", {}, .No_Match },
-	{ "a", "ö", {}, .No_Match },
+	{ "恥", "a", {}, .No_Match },
+	{ "a", "恥", {}, .No_Match },
+
+	// meta
+	
+	// begin with unicode
+	{ "^te恥st", "te恥st", { 0, 0, 5 }, .OK },
+	{ "^恥test", "恥test xyz", { 0, 0, 5 }, .OK },
+	
+	// end with unicode
+	{ "te恥st$", "abcabc te恥st", { 7, 7, 5 }, .OK },
+	{ "恥test$", "abcabc 恥test", { 7, 7, 5 }, .OK },
+	
+	// dot with unicode
+	{ "te.st", "te恥st", { 0, 0, 5 }, .OK },
+	{ ".st", "abc恥st", { 3, 3, 3 }, .OK },
+	{ ".st", "ab恥恥st", { 5, 3, 3 }, .OK },
+}
+
+UTF8_Temp_Cases := [?]Test_Entry {
+	{ ".st", "ab恥恥st", { 5, 3, 3 }, .OK }, // failed previously
 }
 
 test_check_match_entry :: proc(
@@ -225,6 +244,14 @@ test_utf8_specific_cases :: proc(t: ^testing.T) {
 	}	
 }
 
+@test
+test_utf8_temp_cases :: proc(t: ^testing.T) {
+	for entry in UTF8_Temp_Cases {
+		match, err := regex.match_string_utf8(entry.pattern, entry.haystack)
+		test_check_match_entry(t, entry, match, err)
+	}	
+}
+
 main :: proc() {
 	using fmt
 
@@ -238,6 +265,7 @@ main :: proc() {
 	test_utf8_simple_cases(&t)
 	test_utf8_meta_cases(&t)
 	test_utf8_specific_cases(&t)
+	// test_utf8_temp_cases(&t)
 
 	fmt.printf("%v/%v tests successful.\n", TEST_count - TEST_fail, TEST_count)
 	if TEST_fail > 0 {

@@ -257,12 +257,14 @@ match_compiled_utf8 :: proc(
 					return
 				}
 
-				c, rune_size := utf8.decode_rune(haystack[:])
+				c, rune_size := utf8.decode_rune(haystack[byte_idx:])
 				if c == utf8.RUNE_ERROR {
+					printf("ERRR\n")
 					err = .Rune_Error
 					return
 				}
 				
+				printf("\tSTEP RUNE: %v\tsize: %v\n", c, rune_size)
 				byte_idx += rune_size
 				char_idx += 1
 			}
@@ -373,34 +375,34 @@ match_character_class_utf8 :: proc(r: rune, class: []rune) -> bool {
 @(private="package")
 match_one_utf8 :: proc(
 	object: Object_UTF8, 
-	char: rune,
+	r: rune,
 	info: Info_UTF8,
 ) -> bool {
-	printf("[match 1] %c (%v)\n", char, object.type)
+	printf("[match 1] %c (%v)\n", r, object.type)
 
 	#partial switch object.type {
 	case .Sentinel:
 		return false
 	case .Dot:
-		return match_dot_utf8(char, .Dot_Matches_Newline in info.options) > 0
+		return match_dot_utf8(r, .Dot_Matches_Newline in info.options) > 0
 	case .Character_Class:
-		return match_character_class_utf8(char, info.classes)
+		return match_character_class_utf8(r, info.classes)
 	case .Inverse_Character_Class: 
-		return !match_character_class_utf8(char, info.classes)
+		return !match_character_class_utf8(r, info.classes)
 	case .Digit:
-		return match_digit_utf8(char) > 0
+		return match_digit_utf8(r) > 0
 	case .Not_Digit:
-		return !(match_digit_utf8(char) > 0)
+		return !(match_digit_utf8(r) > 0)
 	case .Alpha:
-		return  match_alphanum_utf8(char) > 0
+		return  match_alphanum_utf8(r) > 0
 	case .Not_Alpha:
-		return !(match_alphanum_utf8(char) > 0)
+		return !(match_alphanum_utf8(r) > 0)
 	case .Whitespace:
-		return  match_whitespace_utf8(char) > 0
+		return  match_whitespace_utf8(r) > 0
 	case .Not_Whitespace:
-		return !(match_whitespace_utf8(char) > 0)
+		return !(match_whitespace_utf8(r) > 0)
 	case:
-		return object.char == char
+		return object.char == r
 	}
 
 	return false
@@ -581,10 +583,11 @@ match_pattern_utf8 :: proc(
 			c, rune_size = utf8.decode_rune(haystack[:])
 			
 			if c == utf8.RUNE_ERROR {
+				printf("ERR1\n")
 				return .Rune_Error
 			}
 		}
-		printf("RUNE %v -> %v\n", c, rune_size)
+		printf("\t\tRUNE %v -> %v\n", c, rune_size)
 
 		if p0.type == .Sentinel || p1.type == .Question_Mark {
 			printf("[match ?] char: %v | TYPES: %v & %v\n", c, p0.type, p1.type)
@@ -607,12 +610,11 @@ match_pattern_utf8 :: proc(
 			break
 		} 
 
-		length^ += 1
-
 		// advance by the next rune
 		haystack = haystack[rune_size:]
 		pattern = pattern[1:]
-		printf("length: %v, len pattern %v\n", length^, len(pattern))
+		length^ += 1
+		printf("[LEN]: %v\n", length^)
 	}
 	
 	length^ = length_in

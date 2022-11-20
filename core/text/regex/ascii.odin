@@ -305,7 +305,7 @@ match_range_ascii :: proc(c: u8, range: []u8) -> bool {
 
 @(private="package")
 match_dot_ascii :: proc(c: u8, match_newline: bool) -> bool {
-	return match_newline || c != '\n' && c != '\r'
+	return match_newline || (c != '\n' && c != '\r')
 }
 
 @(private="package")
