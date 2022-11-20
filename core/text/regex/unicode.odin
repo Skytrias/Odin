@@ -16,15 +16,19 @@ Object_UTF8 :: struct {
 	class: []rune,        /* OR a string with characters in a class */
 }
 
-Compiled_UTF8 :: struct {
-	objects:  [MAX_REGEXP_OBJECTS + 1]Object_UTF8, // Add 1 for the end-of-pattern sentinel
-	classes:  [MAX_CHAR_CLASS_LEN]rune,
+Info_UTF8 :: struct {
+	options: Options,
+	classes: []rune,
 }
 
 /*
 	Public procedures
 */
-compile_utf8 :: proc(pattern: string) -> (compiled: Compiled_UTF8, err: Error) {
+compile_utf8 :: proc(pattern: string) -> (
+	objects: [MAX_REGEXP_OBJECTS + 1]Object_UTF8, 
+	classes: [MAX_CHAR_CLASS_LEN]rune,
+	err: Error,
+) {
 	/*
 		The sizes of the two static arrays substantiate the static RAM usage of this package.
 		MAX_REGEXP_OBJECTS is the max number of symbols in the expression.
@@ -33,10 +37,13 @@ compile_utf8 :: proc(pattern: string) -> (compiled: Compiled_UTF8, err: Error) {
 		TODO(Jeroen): Use a state machine design to handle escaped characters and character classes as part of the main switch?
 	*/
 
+	if pattern == "" {
+		err = .Pattern_Empty
+		return
+	}
+
 	buf := transmute([]u8)pattern
-
 	ccl_buf_idx := int(0)
-
 	j:         int  /* index into re_compiled    */
 	char:      rune
 	rune_size: int 
@@ -46,22 +53,25 @@ compile_utf8 :: proc(pattern: string) -> (compiled: Compiled_UTF8, err: Error) {
 
 		switch char {
 		/* '\\' as last char in pattern -> invalid regular expression. */
-		case utf8.RUNE_ERROR: return {}, .Rune_Error
+		case utf8.RUNE_ERROR: 
+			err = .Rune_Error
+			return
 
 		/*
 			Meta-characters:
 		*/
-		case '^': compiled.objects[j].type = .Begin
-		case '$': compiled.objects[j].type = .End
-		case '.': compiled.objects[j].type = .Dot
-		case '*': compiled.objects[j].type = .Star
-		case '+': compiled.objects[j].type = .Plus
-		case '?': compiled.objects[j].type = .Question_Mark
+		case '^': objects[j].type = .Begin
+		case '$': objects[j].type = .End
+		case '.': objects[j].type = .Dot
+		case '*': objects[j].type = .Star
+		case '+': objects[j].type = .Plus
+		case '?': objects[j].type = .Question_Mark
 		case '|':
 			/*
 				Branch is currently bugged
 			*/
-			return {}, .Operation_Unsupported
+			err = .Operation_Unsupported
+			return
 
 		/*
 			Escaped character-classes (\s \w ...):
@@ -75,23 +85,25 @@ compile_utf8 :: proc(pattern: string) -> (compiled: Compiled_UTF8, err: Error) {
 
 			switch char {
 			/* '\\' as last char in pattern -> invalid regular expression. */
-			case utf8.RUNE_ERROR: return {}, .Pattern_Ended_Unexpectedly
+			case utf8.RUNE_ERROR: 
+				err = .Pattern_Ended_Unexpectedly
+				return
 
 			/*
 				Meta-character:
 			*/
-			case 'd': compiled.objects[j].type = .Digit
-			case 'D': compiled.objects[j].type = .Not_Digit
-			case 'w': compiled.objects[j].type = .Alpha
-			case 'W': compiled.objects[j].type = .Not_Alpha
-			case 's': compiled.objects[j].type = .Whitespace
-			case 'S': compiled.objects[j].type = .Not_Whitespace
+			case 'd': objects[j].type = .Digit
+			case 'D': objects[j].type = .Not_Digit
+			case 'w': objects[j].type = .Alpha
+			case 'W': objects[j].type = .Not_Alpha
+			case 's': objects[j].type = .Whitespace
+			case 'S': objects[j].type = .Not_Whitespace
 			case:
 				/*
 					Escaped character, e.g. `\`, '.' or '$'
 				*/
-				compiled.objects[j].type = .Char
-				compiled.objects[j].char = char
+				objects[j].type = .Char
+				objects[j].char = char
 			}
 
 		case '[':
@@ -111,17 +123,20 @@ compile_utf8 :: proc(pattern: string) -> (compiled: Compiled_UTF8, err: Error) {
 			begin := ccl_buf_idx
 
 			switch char {
-			case utf8.RUNE_ERROR: return {}, .Pattern_Ended_Unexpectedly
+			case utf8.RUNE_ERROR: 
+				err = .Pattern_Ended_Unexpectedly
+				return
+
 			case '^':
 				/*
 					Set object type to inverse and eat `^`.
 				*/
-				compiled.objects[j].type = .Inverse_Character_Class
+				objects[j].type = .Inverse_Character_Class
 
 					buf = buf[1:]
 					char, rune_size = utf8.decode_rune(buf)				
 				case:
-				compiled.objects[j].type = .Character_Class
+				objects[j].type = .Character_Class
 			}
 
 			/*
@@ -129,19 +144,22 @@ compile_utf8 :: proc(pattern: string) -> (compiled: Compiled_UTF8, err: Error) {
 			*/
 			for {
 				if char == utf8.RUNE_ERROR {
-					return {}, .Pattern_Ended_Unexpectedly
+					err = .Pattern_Ended_Unexpectedly
+					return
 				}
 
 				if char == '\\' {
 					if len(buf) <= 1 {
-						return {}, .Pattern_Ended_Unexpectedly  // Expected an escaped character
+						err = .Pattern_Ended_Unexpectedly  // Expected an escaped character
+						return
 					}
 
 					if ccl_buf_idx >= MAX_CHAR_CLASS_LEN {
-						return {}, .Character_Class_Buffer_Too_Small
+						err = .Character_Class_Buffer_Too_Small
+						return
 					}
 
-					compiled.classes[ccl_buf_idx] = char
+					classes[ccl_buf_idx] = char
 					ccl_buf_idx += 1
 
 					buf = buf[1:]
@@ -153,24 +171,25 @@ compile_utf8 :: proc(pattern: string) -> (compiled: Compiled_UTF8, err: Error) {
 				}
 
 				if ccl_buf_idx >= MAX_CHAR_CLASS_LEN {
-					return {}, .Character_Class_Buffer_Too_Small
+					err = .Character_Class_Buffer_Too_Small
+					return
 				}
 
-				compiled.classes[ccl_buf_idx] = char
+				classes[ccl_buf_idx] = char
 				ccl_buf_idx += 1				
 
 				buf = buf[1:]
 				char, rune_size = utf8.decode_rune(buf)				
 			}
 
-			compiled.objects[j].class = compiled.classes[begin:ccl_buf_idx]
+			objects[j].class = classes[begin:ccl_buf_idx]
 
 		case:
 			/*
 				Other characters:
 			*/
-			compiled.objects[j].type = .Char
-			compiled.objects[j].char = char
+			objects[j].type = .Char
+			objects[j].char = char
 		}
 
 		/*
@@ -183,48 +202,49 @@ compile_utf8 :: proc(pattern: string) -> (compiled: Compiled_UTF8, err: Error) {
 	/*
 		Finish pattern with a Sentinel
 	*/
-	compiled.objects[j].type = .Sentinel
+	objects[j].type = .Sentinel
 
 	return
 }
 
-match_string_utf8 :: proc(pattern, haystack: string, options := DEFAULT_OPTIONS) -> (position, length: int, err: Error) {
+match_string_utf8 :: proc(
+	pattern: string, 
+	haystack: string, 
+	options := DEFAULT_OPTIONS,
+) -> (position, length: int, err: Error) {
 	if .ASCII_Only in options {
 		return 0, 0, .Incompatible_Option
 	}
-	compiled := compile_utf8(pattern) or_return
-	return match_compiled_utf8(compiled, haystack, options)
+	
+	objects, classes := compile_utf8(pattern) or_return
+	info := Info_UTF8 { options, classes[:] }
+	return match_compiled_utf8(objects[:], haystack, info)
 }
 
-match_compiled_utf8 :: proc(pattern: Compiled_UTF8, haystack: string, options := DEFAULT_OPTIONS) -> (position, length: int, err: Error) {
-	/*
-		Bail on empty pattern.
-	*/
-	pattern := pattern
-	objects := pattern.objects[:]
+match_compiled_utf8 :: proc(
+	pattern: []Object_UTF8, 
+	haystack: string, 
+	info: Info_UTF8,
+) -> (position, length: int, err: Error) {
+	l := int(0)
 
-	if objects[0].type != .Sentinel {
-		if objects[0].type == .Begin {
-			return 0, match_pattern(objects[1:], haystack, options)
+	if pattern[0].type != .Sentinel {
+		if pattern[0].type == .Begin {
+			e := match_pattern_utf8(pattern[1:], haystack, &l, info)
+			return 0, l, e
 		} else {
 			byte_idx := 0
 			char_idx := 0
 
 			for _, byte_idx in haystack {
-				length, err = match_pattern(objects[:], haystack, options)
+				l = 0
+				e := match_pattern_utf8(pattern, haystack, &l, info)
 
-				#partial switch err {
-				case .No_Match:
-					/*
-						Iterate.
-					*/
-				case:
-					/*
-						Either a match or an error, so return.
-					*/
-					position = byte_idx if .Byte_Index in options else char_idx
-					return
+				if e == .No_Match {
+					position := byte_idx if .Byte_Index in info.options else char_idx
+					return position, l, e
 				}
+
 				char_idx += 1
 			}
 		}
@@ -356,160 +376,223 @@ match_character_class_utf8 :: proc(r: rune, class: []rune) -> (matched: bool) {
 }
 
 @(private="package")
-match_one_utf8 :: proc(object: Object_UTF8, char: rune) -> (matched: bool) {
+match_one_utf8 :: proc(
+	object: Object_UTF8, 
+	char: rune,
+	info: Info_UTF8,
+) -> (matched: bool) {
+	printf("[match 1] %c (%v)\n", char, object.type)
 
+	#partial switch object.type {
+	case .Sentinel:
+		return false
+	case .Dot:
+		return match_dot_utf8(char, .Dot_Matches_Newline in info.options) > 0
+	case .Character_Class:
+		return match_character_class_utf8(char, info.classes)
+	case .Inverse_Character_Class: 
+		return !match_character_class_utf8(char, info.classes)
+	case .Digit:
+		return match_digit_utf8(char) > 0
+	case .Not_Digit:
+		return !(match_digit_utf8(char) > 0)
+	case .Alpha:
+		return  match_alphanum_utf8(char) > 0
+	case .Not_Alpha:
+		return !(match_alphanum_utf8(char) > 0)
+	case .Whitespace:
+		return  match_whitespace_utf8(char) > 0
+	case .Not_Whitespace:
+		return !(match_whitespace_utf8(char) > 0)
+	case:
+		return object.char == char
+	}
 
 	return false
 }
 
 @(private="package")
-match_star_utf8 :: proc() -> (matched: bool) {
+match_star_utf8 :: proc(
+	p: Object_UTF8,
+	pattern: []Object_UTF8, 
+	haystack: string,
+	length: ^int, 
+	info: Info_UTF8,
+) -> (err: Error) {
+	count := 0
+	prelen := length^
+	temp_haystack := haystack
 
-	return false
-}
-
-@(private="package")
-match_plus_utf8 :: proc() -> (matched: bool) {
-
-	return false
-}
-
-@(private="package")
-match_question_utf8 :: proc() -> (matched: bool) {
-
-	return false
-}
-
-/*
-static int matchone(regex_t p, char c)
-{
-	switch (p.type)
-	{
-	case DOT:            return matchdot(c);
-	case CHAR_CLASS:     return  matchcharclass(c, (const char*)p.u.ccl);
-	case INV_CHAR_CLASS: return !matchcharclass(c, (const char*)p.u.ccl);
-	case DIGIT:          return  matchdigit(c);
-	case NOT_DIGIT:      return !matchdigit(c);
-	case ALPHA:          return  matchalphanum(c);
-	case NOT_ALPHA:      return !matchalphanum(c);
-	case WHITESPACE:     return  matchwhitespace(c);
-	case NOT_WHITESPACE: return !matchwhitespace(c);
-	default:             return  (p.u.ch == c);
-	}
-}
-
-static int matchstar(regex_t p, regex_t* pattern, const char* text, int* matchlength)
-{
-	int prelen = *matchlength;
-	const char* prepoint = text;
-	while ((text[0] != '\0') && matchone(p, *text))
-	{
-	text++;
-	(*matchlength)++;
-	}
-	while (text >= prepoint)
-	{
-	if (matchpattern(pattern, text--, matchlength))
-		return 1;
-	(*matchlength)--;
-	}
-
-	*matchlength = prelen;
-	return 0;
-}
-
-static int matchplus(regex_t p, regex_t* pattern, const char* text, int* matchlength)
-{
-	const char* prepoint = text;
-	while ((text[0] != '\0') && matchone(p, *text))
-	{
-	text++;
-	(*matchlength)++;
-	}
-	while (text > prepoint)
-	{
-	if (matchpattern(pattern, text--, matchlength))
-		return 1;
-	(*matchlength)--;
-	}
-
-	return 0;
-}
-
-static int matchquestion(regex_t p, regex_t* pattern, const char* text, int* matchlength)
-{
-	if (p.type == UNUSED)
-	return 1;
-	if (matchpattern(pattern, text, matchlength))
-		return 1;
-	if (*text && matchone(p, *text++))
-	{
-	if (matchpattern(pattern, text, matchlength))
-	{
-		(*matchlength)++;
-		return 1;
-	}
-	}
-	return 0;
-}
-
-/* Iterative matching */
-static int matchpattern(regex_t* pattern, const char* text, int* matchlength)
-{
-	int pre = *matchlength;
-	do
-	{
-	if ((pattern[0].type == UNUSED) || (pattern[1].type == QUESTIONMARK))
-	{
-		return matchquestion(pattern[0], &pattern[2], text, matchlength);
-	}
-	else if (pattern[1].type == STAR)
-	{
-		return matchstar(pattern[0], &pattern[2], text, matchlength);
-	}
-	else if (pattern[1].type == PLUS)
-	{
-		return matchplus(pattern[0], &pattern[2], text, matchlength);
-	}
-	else if ((pattern[0].type == END) && pattern[1].type == UNUSED)
-	{
-		return (text[0] == '\0');
-	}
-/*  Branching is not working properly
-	else if (pattern[1].type == BRANCH)
-	{
-		return (matchpattern(pattern, text) || matchpattern(&pattern[2], text));
-	}
-*/
-	(*matchlength)++;
-	}
-	while ((text[0] != '\0') && matchone(*pattern++, *text++));
-
-	*matchlength = pre;
-	return 0;
-}
-*/
-
-match_pattern_utf8 :: proc(objects: []Object_UTF8, haystack: string, options: Options, match_length_in := int(0)) -> (length: int, err: Error) {
-	fmt.printf("Trying to match against \"%v\" using options %v:\n\n", haystack, options)
-
-	for o in objects {
-		if o.type == .Sentinel {
-			break
-		} else if o.type == .Character_Class || o.type == .Inverse_Character_Class {
-			fmt.printf("type: %v%v\n", o.type, o.class)
-		} else if o.type == .Char {
-			fmt.printf("type: %v{{'%c'}}\n", o.type, o.char)
-		} else {
-			fmt.printf("type: %v\n", o.type)
+	// run through temp haystack and compare by one
+	for len(temp_haystack) > 0 {
+		c, rune_size := utf8.decode_rune(temp_haystack[:])
+		
+		if c == utf8.RUNE_ERROR {
+			return .Rune_Error
 		}
+
+		if !match_one_utf8(p, c, info) {
+			break
+		}
+
+		temp_haystack = temp_haystack[rune_size:]
+		count += 1
+		length^ += 1
 	}
 
-	return	
+	// run through the string in reverse (decode utf8 in reverse)
+	haystack_front := haystack[:len(haystack) - len(temp_haystack)]
+	for count >= 0 {
+		if match_pattern_utf8(pattern, temp_haystack, length, info) == .OK {
+			return .OK
+		}
+
+		// read rune from the last front rune
+		c, rune_size := utf8.decode_last_rune_in_string(haystack_front)
+
+		// error early
+		if c == utf8.RUNE_ERROR {
+			return .Rune_Error
+		}
+
+		// reverse decrease the end of the front string
+		temp_haystack = haystack[len(haystack_front):]
+		haystack_front = haystack_front[:len(haystack_front) - rune_size]
+		
+		count -= 1
+		length^ -= 1
+	}
+
+	length^ = prelen
+	return .No_Match
 }
 
-print_utf8 :: proc(compiled: Compiled_UTF8) {
-	for o in compiled.objects {
+@(private="package")
+match_plus_utf8 :: proc(
+	p: Object_UTF8,
+	pattern: []Object_UTF8,
+	haystack: string, 
+	length: ^int, 
+	info: Info_UTF8,
+) -> (err: Error) {
+	idx := 0
+
+	// // TODO do proper rune
+	// for idx < len(buf) && match_one_utf8(p, rune(buf[idx]), info) {
+	// 	idx += 1
+	// 	length^ += 1
+	// }
+
+	// // run till first character
+	// for idx > 0 {
+	// 	// TODO do proper rune walking
+	// 	if match_pattern_utf8(pattern, string(buf[idx:]), length, info) == .OK {
+	// 		return .OK
+	// 	}
+	// 	idx -= 1
+	// 	length^ -= 1
+	// }
+
+	return .No_Match
+}
+
+@(private="package")
+match_question_utf8 :: proc(
+	p: Object_UTF8,
+	pattern: []Object_UTF8, 
+	haystack: string, 
+	length: ^int, 
+	info: Info_UTF8,
+) -> (err: Error) {
+	if p.type == .Sentinel {
+		return .OK
+	}
+
+	// if match_pattern_utf8(pattern, buf, length, info) == .OK {
+	// 	return .OK
+	// }
+
+	// // check first character
+	// if len(buf) > 0 && match_one_utf8(p, buf[0], info) {
+	// 	// check upcoming content
+	// 	if match_pattern_utf8(pattern, buf[1:], length, info) == .OK {
+	// 		length^ += 1
+	// 		return .OK
+	// 	}
+	// }
+
+	return .No_Match
+}
+
+match_pattern_utf8 :: proc(
+	pattern: []Object_UTF8, 
+	haystack: string, 
+	length: ^int,
+	info: Info_UTF8,
+) -> (err: Error) {
+	// end early in case of empty pattern or buffer
+	if len(haystack) == 0 || len(pattern) == 0 {
+		return .No_Match
+	}
+
+	pattern := pattern
+	haystack := haystack
+	length_in := length^
+	printf("[match] %v\n", haystack)
+
+	for {
+		// NOTE(Skytrias): simple bounds checking
+		p0 := len(pattern) > 0 ? pattern[0] : {}
+		p1 := len(pattern) > 1 ? pattern[1] : {}
+		
+		// fetch the next rune, available for printing
+		c: rune
+		rune_size: int
+		if len(haystack) == 0 {
+			c = 0
+		} else {
+			c, rune_size = utf8.decode_rune(haystack[:])
+			
+			if c == utf8.RUNE_ERROR {
+				return .Rune_Error
+			}
+		}
+
+		if p0.type == .Sentinel || p1.type == .Question_Mark {
+			printf("[match ?] char: %v | TYPES: %v & %v\n", c, p0.type, p1.type)
+			return match_question_utf8(p0, pattern[2:], haystack, length, info)
+		} else if p1.type == .Star {
+			printf("[match *] char: %v\n", c)
+			return match_star_utf8(p0, pattern[2:], haystack, length, info)
+		} else if p1.type == .Plus {
+			printf("[match +] char: %v\n", c)
+			return match_plus_utf8(p0, pattern[2:], haystack, length, info)
+		} else if p0.type == .End && p1.type == .Sentinel {
+			if len(haystack) == 0 {
+				return .OK
+			}
+
+			return .No_Match
+		}
+
+		if !match_one_utf8(p0, c, info) {
+			break
+		} 
+
+		length^ += 1
+
+		// advance by the next rune
+		haystack = haystack[rune_size:]
+		pattern = pattern[1:]
+		printf("length: %v, len pattern %v\n", length^, len(pattern))
+	}
+	
+	length^ = length_in
+	return .No_Match
+}
+
+print_utf8 :: proc(pattern: []Object_UTF8, classes: []rune) {
+	for o in pattern {
 		if o.type == .Sentinel {
 			break
 		} else if o.type == .Character_Class || o.type == .Inverse_Character_Class {

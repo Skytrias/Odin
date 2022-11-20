@@ -35,7 +35,7 @@ Test_Entry :: struct {
 }
 
 ASCII_Simple_Cases := [?]Test_Entry {
-	// empty patter/haystack
+	// empty pattern/haystack
 	{ "", "test", 0, 0, .Pattern_Empty },
 	{ "test", "", 0, 0, .No_Match },
 
@@ -45,7 +45,6 @@ ASCII_Simple_Cases := [?]Test_Entry {
 	
 	// short
 	{ "2", "2", 0, 1, .OK },
-	{ "ö", "ö", 0, 2, .OK }, // Hmm?
 	{ "1", "1", 0, 1, .OK },
 	
 	// character classes

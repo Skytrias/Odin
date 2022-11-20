@@ -16,7 +16,7 @@ when false {
 
 Object_ASCII :: struct {
 	type:  Operator_Type, /* Char, Star, etc. */
-	c: u8,                /* The character itself. */
+	char: u8,                /* The character itself. */
 	class: Slice,         /* OR a string with characters in a class */
 }
 
@@ -44,15 +44,15 @@ compile_ascii :: proc(pattern: string) -> (
 		TODO(Jeroen): Use a state machine design to handle escaped characters and character classes as part of the main switch?
 	*/
 
+	if pattern == "" {
+		err = .Pattern_Empty
+		return
+	}
+
 	buf := transmute([]u8)pattern
 	ccl_buf_idx := u16(0)
 	j:         int  /* index into re_compiled    */
 	char:      u8
-
-	if len(buf) == 0 {
-		err = .Pattern_Empty
-		return
-	}
 
 	for len(buf) > 0 {
 		// range check j for max range
@@ -111,7 +111,7 @@ compile_ascii :: proc(pattern: string) -> (
 					Escaped character, e.g. `\`, '.' or '$'
 				*/
 				objects[j].type   = .Char
-				objects[j].c = char
+				objects[j].char = char
 			}
 
 		case '[':
@@ -211,7 +211,7 @@ compile_ascii :: proc(pattern: string) -> (
 		case:
 			// Other characters:
 			objects[j].type   = .Char
-			objects[j].c = char
+			objects[j].char = char
 		}
 
 		// Advance pattern
@@ -244,7 +244,7 @@ match_compiled_ascii :: proc(
 	l := int(0)
 
 	// Bail on empty pattern.
-	if len(pattern) != 0 {
+	if pattern[0].type != .Sentinel {
 		if pattern[0].type == .Begin {
 			e := match_pattern_ascii(pattern[1:], buf, &l, info)
 			return 0, l, e
@@ -371,7 +371,7 @@ match_one_ascii :: proc(
 	case .Not_Alpha:               return !match_alphanum_ascii(char)
 	case .Whitespace:              return  match_whitespace_ascii(char)
 	case .Not_Whitespace:          return !match_whitespace_ascii(char)
-	case:                          return object.c == char
+	case:                          return object.char == char
 	}
 }
 
@@ -532,7 +532,7 @@ print_ascii :: proc(pattern: []Object_ASCII, classes: []u8) {
 			}
 			fmt.printf("]\n")
 		} else if o.type == .Char {
-			fmt.printf("type: %v{{'%c'}}\n", o.type, o.c)
+			fmt.printf("type: %v{{'%c'}}\n", o.type, o.char)
 		} else {
 			fmt.printf("type: %v\n", o.type)
 		}

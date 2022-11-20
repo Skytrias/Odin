@@ -92,10 +92,10 @@ Slice :: struct {
 	length:    u16,
 }
 
-Compiled :: union {
-	// Compiled_ASCII,
-	Compiled_UTF8,
-}
+// Compiled :: union {
+// 	// Compiled_ASCII,
+// 	Compiled_UTF8,
+// }
 
 // Compiled_ASCII :: struct {
 // 	// total
