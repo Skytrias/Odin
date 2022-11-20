@@ -30,137 +30,156 @@ when ODIN_TEST {
 Test_Entry :: struct {
 	pattern: string,
 	haystack: string,
-	offset, length: int,
+	match: regex.Match,
 	err: regex.Error,
 }
 
 ASCII_Simple_Cases := [?]Test_Entry {
 	// empty pattern/haystack
-	{ "", "test", 0, 0, .Pattern_Empty },
-	{ "test", "", 0, 0, .No_Match },
+	{ "", "test", {}, .Pattern_Empty },
+	{ "test", "", {}, .No_Match },
 
 	// simple
-	{ "foobar", "foobar", 0, 6, .OK },
-	{ "foobar", "fooba", 0, 0, .No_Match },
+	{ "foobar", "foobar", { 0, 0, 6 }, .OK },
+	{ "foobar", "fooba", {}, .No_Match },
 	
 	// short
-	{ "2", "2", 0, 1, .OK },
-	{ "1", "1", 0, 1, .OK },
+	{ "2", "2", { 0, 0, 1 }, .OK },
+	{ "1", "1", { 0, 0, 1 }, .OK },
 	
 	// character classes
-	{ "[Hh]ello [Ww]orld", "Hello World", 0, 11, .OK },
-	{ "[Hh]ello [Ww]orld", "Hello world", 0, 11, .OK },
-	{ "[Hh]ello [Ww]orld", "hello world", 0, 11, .OK },
-	{ "[Hh]ello [Ww]orld", "hello World", 0, 11, .OK },
-	{ "[aabc", "a", 0, 0, .Pattern_Ended_Unexpectedly }, // check early ending
-	{ "[", "a", 0, 0, .Pattern_Ended_Unexpectedly }, // check early ending
-	{ "[\\\\]", "\\", 0, 1, .OK }, // check early ending
+	{ "[Hh]ello [Ww]orld", "Hello World", { 0, 0, 11 }, .OK },
+	{ "[Hh]ello [Ww]orld", "Hello world", { 0, 0, 11 }, .OK },
+	{ "[Hh]ello [Ww]orld", "hello world", { 0, 0, 11 }, .OK },
+	{ "[Hh]ello [Ww]orld", "hello World", { 0, 0, 11 }, .OK },
+	{ "[aabc", "a", {}, .Pattern_Ended_Unexpectedly }, // check early ending
+	{ "[", "a", {}, .Pattern_Ended_Unexpectedly }, // check early ending
+	{ "[\\\\]", "\\", { 0, 0, 1 }, .OK }, // check early ending
 
 	// escaped chars
-	{ "\\", "\\", 0, 0, .Pattern_Ended_Unexpectedly },
-	{ "\\\\", "\\\\", 0, 1, .OK },
+	{ "\\", "\\", {}, .Pattern_Ended_Unexpectedly },
+	{ "\\\\", "\\\\", { 0, 0, 1 }, .OK },
 	
 	// digit class
-	{ "\\d", "1", 0, 1, .OK },
-	{ "\\d", "a", 0, 0, .No_Match },
-	{ "\\d\\d", "12", 0, 2, .OK },
+	{ "\\d", "1", { 0, 0, 1 }, .OK },
+	{ "\\d", "a", {}, .No_Match },
+	{ "\\d\\d", "12", { 0, 0, 2 }, .OK },
 
 	// non-digit class
-	{ "\\D", "a", 0, 1, .OK },
-	{ "\\D", "1", 0, 0, .No_Match },
-	{ "\\D\\D\\D", "abc", 0, 3, .OK },
+	{ "\\D", "a", { 0, 0, 1 }, .OK },
+	{ "\\D", "1", {}, .No_Match },
+	{ "\\D\\D\\D", "abc", { 0, 0, 3 }, .OK },
 
 	// alpha class
-	{ "\\w", "a", 0, 1, .OK },
-	{ "\\w", "1", 0, 1, .OK },
-	{ "\\w\\w\\w", "__A", 0, 3, .OK },
+	{ "\\w", "a", { 0, 0, 1 }, .OK },
+	{ "\\w", "1", { 0, 0, 1 }, .OK },
+	{ "\\w\\w\\w", "__A", { 0, 0, 3 }, .OK },
 
 	// non-alpha class
-	{ "\\W", "a", 0, 0, .No_Match },
-	{ "\\W", "@", 0, 1, .OK },
-	{ "\\W", "-", 0, 1, .OK },
+	{ "\\W", "a", {}, .No_Match },
+	{ "\\W", "@", { 0, 0, 1 }, .OK },
+	{ "\\W", "-", { 0, 0, 1 }, .OK },
 
 	// whitespace class
-	{ "\\s", " ", 0, 1, .OK },
-	{ "\\s", "a", 0, 0, .No_Match },
-	{ "\\s\\s\\s", "   ", 0, 3, .OK },
+	{ "\\s", " ", { 0, 0, 1 }, .OK },
+	{ "\\s", "a", {}, .No_Match },
+	{ "\\s\\s\\s", "   ", { 0, 0, 3 }, .OK },
 
 	// non-whitespace class
-	{ "\\S", "a", 0, 1, .OK },
-	{ "\\S", " ", 0, 0, .No_Match },
-	{ "\\S\\S\\S", "abc", 0, 3, .OK },
+	{ "\\S", "a", { 0, 0, 1, }, .OK },
+	{ "\\S", " ", {}, .No_Match },
+	{ "\\S\\S\\S", "abc", { 0, 0, 3 }, .OK },
 
 	// inverse class
-	{ "[^a]", "0", 0, 1, .OK },
-	{ "[^a]", "a", 0, 0, .No_Match },
-	{ "[^a]", "A", 0, 1, .OK },
-	{ "[^", "", 0, 0, .Pattern_Ended_Unexpectedly }, // check early ending
+	{ "[^a]", "0", { 0, 0, 1 }, .OK },
+	{ "[^a]", "a", {}, .No_Match },
+	{ "[^a]", "A", { 0, 0, 1 }, .OK },
+	{ "[^", "", {}, .Pattern_Ended_Unexpectedly }, // check early ending
 }
 
 ASCII_Meta_Cases := [?]Test_Entry {
 	// begin
-	{ "^test", "test", 0, 4, .OK },
-	{ "test", "xtest", 1, 4, .OK },
-	{ "^test", "xtest", 0, 0, .No_Match },
-	{ "^", "test", 0, 0, .OK }, // TODO expected result?
+	{ "^test", "test", { 0, 0, 4 }, .OK },
+	{ "test", "xtest", { 1, 1, 4 }, .OK },
+	{ "^test", "xtest", {}, .No_Match },
+	{ "^", "test", {}, .OK }, // TODO expected result?
 
 	// end
-	{ "$", "", 0, 0, .No_Match },
-	{ "$", "test", 0, 0, .No_Match },
-	{ "test$", "test", 0, 4, .OK },
-	{ "test$", "abctest", 3, 4, .OK },
+	{ "$", "", {}, .No_Match },
+	{ "$", "test", {}, .No_Match },
+	{ "test$", "test", { 0, 0, 4 }, .OK },
+	{ "test$", "abctest", { 3, 3, 4 }, .OK },
 
 	// dot
-	{ ".", "a", 0, 1, .OK },
-	{ ".", "\n", 0, 0, .No_Match },
-	{ ".", " ", 0, 1, .OK },
-	{ "...", "abc", 0, 3, .OK },
-	{ ".y.", "xyz", 0, 3, .OK },
+	{ ".", "a", { 0, 0, 1 }, .OK },
+	{ ".", "\n", {}, .No_Match },
+	{ ".", " ", { 0, 0, 1 }, .OK },
+	{ "...", "abc", { 0, 0, 3 }, .OK },
+	{ ".y.", "xyz", { 0, 0, 3 }, .OK },
 
 	// star
-	{ "s*", "expression", 0, 0, .OK },
-	{ "s*", "expresion", 0, 0, .OK },
-	{ "es*", "expreion", 0, 1, .OK }, // .Star error previously
-	{ "es*", "xpreion", 3, 1, .OK },
-	{ "tes*", "tetest", 0, 2, .OK },
+	{ "s*", "expression", {}, .OK },
+	{ "s*", "expresion", {}, .OK },
+	{ "es*", "expreion", { 0, 0, 1 }, .OK }, // .Star error previously
+	{ "es*", "xpreion", { 3, 3, 1 }, .OK },
+	{ "tes*", "tetest", { 0, 0, 2 }, .OK },
 
 	// plus 
-	{ "es+", "expression", 4, 3, .OK },
-	{ "es+", "expresion", 4, 2, .OK },
-	{ "es+", "expresssssssion", 4, 8, .OK },
-	{ "es+i", "expresssssssion", 4, 9, .OK },
-	{ "es+i", "expression", 4, 4, .OK },
-	{ "es+i", "expreion", 0, 0, .No_Match },
+	{ "es+", "expression", { 4, 4, 3 }, .OK },
+	{ "es+", "expresion", { 4, 4, 2 }, .OK },
+	{ "es+", "expresssssssion", { 4, 4, 8 }, .OK },
+	{ "es+i", "expresssssssion", { 4, 4, 9 }, .OK },
+	{ "es+i", "expression", { 4, 4, 4 }, .OK },
+	{ "es+i", "expreion", {}, .No_Match },
 
 	// question mark
-	{ "te?st", "test", 0, 4, .OK },
-	{ "te?st", "tst", 0, 3, .OK },
-	{ "te?s?t", "tt", 0, 2, .OK },
-	{ "t??t", "tt", 0, 0, .No_Match },
+	{ "te?st", "test", { 0, 0, 4 }, .OK },
+	{ "te?st", "tst", { 0, 0, 3 }, .OK },
+	{ "te?s?t", "tt", { 0, 0, 2 }, .OK },
+	{ "t??t", "tt", {}, .No_Match },
 
 	// branch
-	{ "|", "test", 0, 0, .Operation_Unsupported }
+	{ "|", "test", {}, .Operation_Unsupported }
 }
 
-test_check_entry :: proc(
+// NOTE(Skytrias): should be checked for all object.type variants
+// utf8 specific cases with large rune sizes
+UTF8_Specific_Cases := [?]Test_Entry {
+	// simple unicode with proper length result
+	{ "testö", "testö", { 0, 0, 5 }, .OK },
+	{ "ö", "ö", { 0, 0, 1 }, .OK },
+	{ "ö", "abcö", { 3, 3, 1 }, .OK },
+	{ "ööö", "abcööö", { 3, 3, 3 }, .OK },
+	
+	// proper rune offsets
+	{ "abc", "öabc", { 2, 1, 3 }, .OK },
+	{ "abc", "öööabc", { 6, 3, 3 }, .OK },
+	
+	// size 3 big runes
+	{ "恥ずべきフクロ", "恥ずべきフクロ", { 0, 0, 7 }, .OK },
+	{ "ずべきフクロ", "恥ずべきフクロ", { 3, 1, 6 }, .OK },
+	
+	// different sizes
+	{ "ö", "a", {}, .No_Match },
+	{ "a", "ö", {}, .No_Match },
+}
+
+test_check_match_entry :: proc(
 	t: ^testing.T,
 	entry: Test_Entry,
-	offset: int,
-	length: int,
+	match: regex.Match,
 	err: regex.Error,
 ) {
 	expect(
 		t, 
-		offset == entry.offset && length == entry.length && err == entry.err, 
+		match == entry.match, 
 		fmt.tprintf(
-			"\nRGX:%v\t\tSTR:%v\nExpected match result {{offset=%v, len=%v, res=%v}}, got {{offset=%v, len=%v, res=%v}}\n", 
+			"\nRGX:%v\t\tSTR:%v\nExpected match result %v = %v, got %v = %v\n", 
 			entry.pattern, 
 			entry.haystack, 
-			entry.offset, 
-			entry.length, 
+			entry.match, 
 			entry.err, 
-			offset, 
-			length, 
+			match, 
 			err,
 		),
 	)
@@ -169,33 +188,41 @@ test_check_entry :: proc(
 @test
 test_ascii_simple_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Simple_Cases {
-		offset, length, err := regex.match_string_ascii(entry.pattern, entry.haystack)
-		test_check_entry(t, entry, offset, length, err)
+		match, err := regex.match_string_ascii(entry.pattern, entry.haystack)
+		test_check_match_entry(t, entry, match, err)
 	}
 }
 
 @test
 test_ascii_meta_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Meta_Cases {
-		offset, length, err := regex.match_string_ascii(entry.pattern, entry.haystack)
-		test_check_entry(t, entry, offset, length, err)
+		match, err := regex.match_string_ascii(entry.pattern, entry.haystack)
+		test_check_match_entry(t, entry, match, err)
 	}
 }
 
 @test
 test_utf8_simple_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Simple_Cases {
-		offset, length, err := regex.match_string_utf8(entry.pattern, entry.haystack)
-		test_check_entry(t, entry, offset, length, err)
+		match, err := regex.match_string_utf8(entry.pattern, entry.haystack)
+		test_check_match_entry(t, entry, match, err)
 	}
 }
 
 @test
 test_utf8_meta_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Meta_Cases {
-		offset, length, err := regex.match_string_utf8(entry.pattern, entry.haystack)
-		test_check_entry(t, entry, offset, length, err)
+		match, err := regex.match_string_utf8(entry.pattern, entry.haystack)
+		test_check_match_entry(t, entry, match, err)
 	}
+}
+
+@test
+test_utf8_specific_cases :: proc(t: ^testing.T) {
+	for entry in UTF8_Specific_Cases {
+		match, err := regex.match_string_utf8(entry.pattern, entry.haystack)
+		test_check_match_entry(t, entry, match, err)
+	}	
 }
 
 main :: proc() {
@@ -210,6 +237,7 @@ main :: proc() {
 	test_ascii_meta_cases(&t)
 	test_utf8_simple_cases(&t)
 	test_utf8_meta_cases(&t)
+	test_utf8_specific_cases(&t)
 
 	fmt.printf("%v/%v tests successful.\n", TEST_count - TEST_fail, TEST_count)
 	if TEST_fail > 0 {

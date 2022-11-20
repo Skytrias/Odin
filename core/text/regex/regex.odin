@@ -36,7 +36,7 @@ import "core:fmt"
 MAX_REGEXP_OBJECTS :: #config(REGEX_MAX_REGEXP_OBJECTS, 30) /* Max number of regex symbols in expression. */
 MAX_CHAR_CLASS_LEN :: #config(REGEX_MAX_CHAR_CLASS_LEN, 40) /* Max length of character-class buffer in.   */
 
-DEFAULT_OPTIONS    :: Options{ .Byte_Index }
+DEFAULT_OPTIONS    :: Options {}
 
 Option :: enum u8 {
 	Dot_Matches_Newline,      /* `.` should match newline as well                                              */
@@ -47,8 +47,6 @@ Option :: enum u8 {
 	Unicode_Alpha_Match,      /* `\w` uses `core:unicode` to determine if rune is a letter                     */
 	Unicode_Digit_Match,      /* `\d` uses `core:unicode` to determine if rune is a digit                      */
 	Unicode_Whitespace_Match, /* `\s` uses `core:unicode` to determine if rune is whitespace                   */
-
-	Byte_Index,               /* Return byte index instead of character index for utf-8 input                  */
 }
 Options :: bit_set[Option; u8]
 
@@ -90,6 +88,12 @@ Operator_Type :: enum u8 {
 Slice :: struct {
 	start_idx: u16,
 	length:    u16,
+}
+
+Match :: struct {
+	byte_offset: int,
+	char_offset: int,
+	length: int,
 }
 
 // Compiled :: union {

@@ -8,7 +8,7 @@ package regex
 
 import "core:fmt"
 
-when true {
+when false {
 	printf :: fmt.printf
 } else {
 	printf :: proc(f: string, v: ..any) {}
@@ -228,7 +228,7 @@ match_string_ascii :: proc(
 	pattern: string, 
 	haystack: string, 
 	options := DEFAULT_OPTIONS,
-) -> (position, length: int, err: Error) {
+) -> (match: Match, err: Error) {
 	objects, classes := compile_ascii(pattern) or_return
 	info := Info_ASCII { options | { .ASCII_Only }, classes[:] }
 	return match_compiled_ascii(objects[:], haystack, info)
@@ -238,7 +238,7 @@ match_compiled_ascii :: proc(
 	pattern: []Object_ASCII, 
 	haystack: string, 
 	info: Info_ASCII,
-) -> (position, length: int, err: Error) {
+) -> (match: Match, err: Error) {
 	haystack := haystack
 	buf      := transmute([]u8)haystack
 	l := int(0)
@@ -246,23 +246,27 @@ match_compiled_ascii :: proc(
 	// Bail on empty pattern.
 	if pattern[0].type != .Sentinel {
 		if pattern[0].type == .Begin {
-			e := match_pattern_ascii(pattern[1:], buf, &l, info)
-			return 0, l, e
+			err = match_pattern_ascii(pattern[1:], buf, &l, info)
+			match = { 0, 0, l }
+			return
 		} else {
-			// TODO(Skytrias): could extend this to still walk in utf8 jumps?
 			for _, byte_idx in haystack {
 				l = 0
 				e := match_pattern_ascii(pattern, buf[byte_idx:], &l, info)
 
 				// Either a match or an error, so return.
 				if e != .No_Match {
-					return byte_idx, l, e
+					err = e
+					// TODO maybe still track utf8 char offsets?
+					match = { byte_idx, byte_idx, l }
+					return
 				}
 			}
 		}
 	}
 
-	return 0, 0, .No_Match
+	err = .No_Match
+	return
 }
 
 /*

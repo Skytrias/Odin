@@ -52,106 +52,130 @@ compile_utf8 :: proc(pattern: string) -> (
 		char, rune_size = utf8.decode_rune(buf)
 
 		switch char {
-		/* '\\' as last char in pattern -> invalid regular expression. */
-		case utf8.RUNE_ERROR: 
-			err = .Rune_Error
-			return
+			/* '\\' as last char in pattern -> invalid regular expression. */
+			case utf8.RUNE_ERROR: {
+				err = .Rune_Error
+				return
+			}
 
-		/*
-			Meta-characters:
-		*/
-		case '^': objects[j].type = .Begin
-		case '$': objects[j].type = .End
-		case '.': objects[j].type = .Dot
-		case '*': objects[j].type = .Star
-		case '+': objects[j].type = .Plus
-		case '?': objects[j].type = .Question_Mark
-		case '|':
 			/*
-				Branch is currently bugged
+				Meta-characters:
 			*/
-			err = .Operation_Unsupported
-			return
+			case '^': objects[j].type = .Begin
+			case '$': objects[j].type = .End
+			case '.': objects[j].type = .Dot
+			case '*': objects[j].type = .Star
+			case '+': objects[j].type = .Plus
+			case '?': objects[j].type = .Question_Mark
+			case '|': {
+				/*
+					Branch is currently bugged
+				*/
+				err = .Operation_Unsupported
+				return
+			}
 
-		/*
-			Escaped character-classes (\s \w ...):
-		*/
-			case '\\':
+			/*
+				Escaped character-classes (\s \w ...):
+			*/
+			case '\\': {
 				/*
 				Eat the escape character and decode the escaped character.
 				*/
 				buf = buf[1:]
 				char, rune_size = utf8.decode_rune(buf)
 
-			switch char {
-			/* '\\' as last char in pattern -> invalid regular expression. */
-			case utf8.RUNE_ERROR: 
-				err = .Pattern_Ended_Unexpectedly
-				return
+				switch char {
+					/* '\\' as last char in pattern -> invalid regular expression. */
+					case utf8.RUNE_ERROR: {
+						err = .Pattern_Ended_Unexpectedly
+						return
+					}
 
-			/*
-				Meta-character:
-			*/
-			case 'd': objects[j].type = .Digit
-			case 'D': objects[j].type = .Not_Digit
-			case 'w': objects[j].type = .Alpha
-			case 'W': objects[j].type = .Not_Alpha
-			case 's': objects[j].type = .Whitespace
-			case 'S': objects[j].type = .Not_Whitespace
-			case:
-				/*
-					Escaped character, e.g. `\`, '.' or '$'
-				*/
-				objects[j].type = .Char
-				objects[j].char = char
+					/*
+						Meta-character:
+					*/
+					case 'd': objects[j].type = .Digit
+					case 'D': objects[j].type = .Not_Digit
+					case 'w': objects[j].type = .Alpha
+					case 'W': objects[j].type = .Not_Alpha
+					case 's': objects[j].type = .Whitespace
+					case 'S': objects[j].type = .Not_Whitespace
+					case: {
+						/*
+							Escaped character, e.g. `\`, '.' or '$'
+						*/
+						objects[j].type = .Char
+						objects[j].char = char
+					}
+				}
 			}
 
-		case '[':
-			/*
-				Character class:
-			*/
-
+			case '[': {
 				/*
-				Eat the `[` and decode the next character.
+					Character class:
 				*/
-				buf = buf[1:]
-				char, rune_size = utf8.decode_rune(buf)
 
-			/*
-				Remember where the rune buffer starts in `.classes`.
-			*/
-			begin := ccl_buf_idx
-
-			switch char {
-			case utf8.RUNE_ERROR: 
-				err = .Pattern_Ended_Unexpectedly
-				return
-
-			case '^':
-				/*
-					Set object type to inverse and eat `^`.
-				*/
-				objects[j].type = .Inverse_Character_Class
-
+					/*
+					Eat the `[` and decode the next character.
+					*/
 					buf = buf[1:]
-					char, rune_size = utf8.decode_rune(buf)				
-				case:
-				objects[j].type = .Character_Class
-			}
+					char, rune_size = utf8.decode_rune(buf)
 
-			/*
-				Copy characters inside `[...]` to buffer.
-			*/
-			for {
-				if char == utf8.RUNE_ERROR {
-					err = .Pattern_Ended_Unexpectedly
-					return
+				/*
+					Remember where the rune buffer starts in `.classes`.
+				*/
+				begin := ccl_buf_idx
+
+				switch char {
+					case utf8.RUNE_ERROR: {
+						err = .Pattern_Ended_Unexpectedly
+						return
+					}
+
+					case '^': {
+						/*
+							Set object type to inverse and eat `^`.
+						*/
+						objects[j].type = .Inverse_Character_Class
+						buf = buf[1:]
+						char, rune_size = utf8.decode_rune(buf)
+					}
+					
+					case: {
+						objects[j].type = .Character_Class
+					}
 				}
 
-				if char == '\\' {
-					if len(buf) <= 1 {
-						err = .Pattern_Ended_Unexpectedly  // Expected an escaped character
+				/*
+					Copy characters inside `[...]` to buffer.
+				*/
+				for {
+					if char == utf8.RUNE_ERROR {
+						err = .Pattern_Ended_Unexpectedly
 						return
+					}
+
+					if char == '\\' {
+						if len(buf) <= 1 {
+							err = .Pattern_Ended_Unexpectedly  // Expected an escaped character
+							return
+						}
+
+						if ccl_buf_idx >= MAX_CHAR_CLASS_LEN {
+							err = .Character_Class_Buffer_Too_Small
+							return
+						}
+
+						classes[ccl_buf_idx] = char
+						ccl_buf_idx += 1
+
+						buf = buf[1:]
+						char, rune_size = utf8.decode_rune(buf)				
+					}
+
+					if char == ']' {
+						break
 					}
 
 					if ccl_buf_idx >= MAX_CHAR_CLASS_LEN {
@@ -160,36 +184,22 @@ compile_utf8 :: proc(pattern: string) -> (
 					}
 
 					classes[ccl_buf_idx] = char
-					ccl_buf_idx += 1
+					ccl_buf_idx += 1				
 
 					buf = buf[1:]
 					char, rune_size = utf8.decode_rune(buf)				
 				}
 
-				if char == ']' {
-					break;
-				}
-
-				if ccl_buf_idx >= MAX_CHAR_CLASS_LEN {
-					err = .Character_Class_Buffer_Too_Small
-					return
-				}
-
-				classes[ccl_buf_idx] = char
-				ccl_buf_idx += 1				
-
-				buf = buf[1:]
-				char, rune_size = utf8.decode_rune(buf)				
+				objects[j].class = classes[begin:ccl_buf_idx]
 			}
 
-			objects[j].class = classes[begin:ccl_buf_idx]
-
-		case:
-			/*
-				Other characters:
-			*/
-			objects[j].type = .Char
-			objects[j].char = char
+			case: {
+				/*
+					Other characters:
+				*/
+				objects[j].type = .Char
+				objects[j].char = char
+			}
 		}
 
 		/*
@@ -211,9 +221,9 @@ match_string_utf8 :: proc(
 	pattern: string, 
 	haystack: string, 
 	options := DEFAULT_OPTIONS,
-) -> (position, length: int, err: Error) {
+) -> (match: Match, err: Error) {
 	if .ASCII_Only in options {
-		return 0, 0, .Incompatible_Option
+		return {}, .Incompatible_Option
 	}
 	
 	objects, classes := compile_utf8(pattern) or_return
@@ -225,13 +235,14 @@ match_compiled_utf8 :: proc(
 	pattern: []Object_UTF8, 
 	haystack: string, 
 	info: Info_UTF8,
-) -> (position, length: int, err: Error) {
+) -> (match: Match, err: Error) {
 	l := int(0)
 
 	if pattern[0].type != .Sentinel {
 		if pattern[0].type == .Begin {
-			e := match_pattern_utf8(pattern[1:], haystack, &l, info)
-			return 0, l, e
+			err = match_pattern_utf8(pattern[1:], haystack, &l, info)
+			match = { 0, 0, l }
+			return
 		} else {
 			byte_idx := 0
 			char_idx := 0
@@ -241,20 +252,25 @@ match_compiled_utf8 :: proc(
 				e := match_pattern_utf8(pattern, haystack[byte_idx:], &l, info)
 
 				if e != .No_Match {
-					position := byte_idx if .Byte_Index in info.options else char_idx
-					return position, l, e
+					match = { byte_idx, char_idx, l }
+					err = e
+					return
 				}
 
 				c, rune_size := utf8.decode_rune(haystack[:])
 				if c == utf8.RUNE_ERROR {
-					return  0, 0, .Rune_Error
+					err = .Rune_Error
+					return
 				}
+				
 				byte_idx += rune_size
 				char_idx += 1
 			}
 		}
 	}
-	return 0, 0, .No_Match
+
+	err = .No_Match
+	return
 }
 
 /*
