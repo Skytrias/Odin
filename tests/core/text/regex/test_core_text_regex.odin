@@ -189,6 +189,8 @@ UTF8_Specific_Cases := [?]Test_Entry {
 
 	// character class
 	{ "[Öö]", "Whatö", { 4, 4, 1 }, .OK },
+	{ "[Öö]", "What ", {}, .No_Match },
+	{ "[Öö ]", "What ", { 4, 4, 1 }, .OK },
 
 	// meta
 	
