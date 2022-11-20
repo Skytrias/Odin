@@ -454,23 +454,48 @@ match_plus_utf8 :: proc(
 	length: ^int, 
 	info: Info_UTF8,
 ) -> (err: Error) {
-	idx := 0
+	count := 0
+	temp_haystack := haystack
 
-	// // TODO(Skytrias): do proper rune
-	// for idx < len(buf) && match_one_utf8(p, rune(buf[idx]), info) {
-	// 	idx += 1
-	// 	length^ += 1
-	// }
+	// run through temp haystack and compare by one
+	for len(temp_haystack) > 0 {
+		c, rune_size := utf8.decode_rune(temp_haystack[:])
+		
+		if c == utf8.RUNE_ERROR {
+			return .Rune_Error
+		}
 
-	// // run till first character
-	// for idx > 0 {
-	// 	// TODO(Skytrias): do proper rune walking
-	// 	if match_pattern_utf8(pattern, string(buf[idx:]), length, info) == .OK {
-	// 		return .OK
-	// 	}
-	// 	idx -= 1
-	// 	length^ -= 1
-	// }
+		if !match_one_utf8(p, c, info) {
+			break
+		}
+
+		temp_haystack = temp_haystack[rune_size:]
+		count += 1
+		length^ += 1
+	}
+
+	// run through the string in reverse (decode utf8 in reverse)
+	haystack_front := haystack[:len(haystack) - len(temp_haystack)]
+	for count > 0 {
+		if match_pattern_utf8(pattern, temp_haystack, length, info) == .OK {
+			return .OK
+		}
+
+		// read rune from the last front rune
+		c, rune_size := utf8.decode_last_rune_in_string(haystack_front)
+
+		// error early
+		if c == utf8.RUNE_ERROR {
+			return .Rune_Error
+		}
+
+		// reverse decrease the end of the front string
+		temp_haystack = haystack[len(haystack_front):]
+		haystack_front = haystack_front[:len(haystack_front) - rune_size]
+		
+		count -= 1
+		length^ -= 1
+	}
 
 	return .No_Match
 }
@@ -487,18 +512,25 @@ match_question_utf8 :: proc(
 		return .OK
 	}
 
-	// if match_pattern_utf8(pattern, buf, length, info) == .OK {
-	// 	return .OK
-	// }
+	if match_pattern_utf8(pattern, haystack, length, info) == .OK {
+		return .OK
+	}
 
-	// // check first character
-	// if len(buf) > 0 && match_one_utf8(p, buf[0], info) {
-	// 	// check upcoming content
-	// 	if match_pattern_utf8(pattern, buf[1:], length, info) == .OK {
-	// 		length^ += 1
-	// 		return .OK
-	// 	}
-	// }
+	// check first character
+	if len(haystack) > 0 {
+		c, rune_size := utf8.decode_rune(haystack[:])
+
+		// check first rune
+		if !match_one_utf8(p, c, info) {
+			return .No_Match
+		}
+
+		// check upcoming content
+		if match_pattern_utf8(pattern, haystack[rune_size:], length, info) == .OK {
+			length^ += 1
+			return .OK
+		}
+	}
 
 	return .No_Match
 }
