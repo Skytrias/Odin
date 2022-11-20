@@ -30,7 +30,7 @@ when ODIN_TEST {
 Test_Entry :: struct {
 	pattern: string,
 	haystack: string,
-	pos, length: int,
+	offset, length: int,
 	err: regex.Error,
 }
 
@@ -146,20 +146,16 @@ ASCII_Meta_Cases := [?]Test_Entry {
 @test
 test_ascii_simple_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Simple_Cases {
-		pos, length, err := regex.match_string_ascii(entry.pattern, entry.haystack)
-		expect(t, err == entry.err, "Regex: wrong error result")
-		expect(t, pos == entry.pos, "Regex: wrong entry position found")
-		expect(t, length == entry.length, "Regex: wrong entry length found")
+		offset, length, err := regex.match_string_ascii(entry.pattern, entry.haystack)
+		expect(t, offset == entry.offset && length == entry.length && err == entry.err, fmt.tprintf("Expected match result {{offset=%v, len=%v, res=%v}}, got {{offset=%v, len=%v, res=%v}}", entry.offset, entry.length, entry.err, offset, length, err))
 	}
 }
 
 @test
 test_ascii_meta_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Meta_Cases {
-		pos, length, err := regex.match_string_ascii(entry.pattern, entry.haystack)
-		expect(t, err == entry.err, "Regex: wrong error result")
-		expect(t, pos == entry.pos, "Regex: wrong entry position found")
-		expect(t, length == entry.length, "Regex: wrong entry length found")
+		offset, length, err := regex.match_string_ascii(entry.pattern, entry.haystack)
+		expect(t, offset == entry.offset && length == entry.length && err == entry.err, fmt.tprintf("Expected match result {{offset=%v, len=%v, res=%v}}, got {{offset=%v, len=%v, res=%v}}", entry.offset, entry.length, entry.err, offset, length, err))
 	}
 }
 

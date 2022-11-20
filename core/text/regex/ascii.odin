@@ -357,10 +357,7 @@ match_one_ascii :: proc(
 	case .Not_Alpha:               return !match_alphanum_ascii(char)
 	case .Whitespace:              return  match_whitespace_ascii(char)
 	case .Not_Whitespace:          return !match_whitespace_ascii(char)
-	case:                          
-		res := object.c == char
-		printf("\tRES: %v (%v == %v)\n", res, rune(object.c), rune(char))
-		return res
+	case:                          return object.c == char
 	}
 }
 
@@ -376,23 +373,19 @@ match_star_ascii :: proc(
 	idx := 0
 	prelen := length^
 
-	printf("INSIDE STAR\n")
 	for idx < len(buf) && match_one_ascii(p, classes, buf[idx], options) {
 		idx += 1
 		length^ += 1
 	}
-	printf("idx: %v, length: %v\n", idx, length^)
 
 	// run till last character
 	for idx >= 0 {
 		if match_pattern_ascii(pattern, classes, buf[idx:], length, options) == .OK {
-			printf("\tSTAR OKAY\n")
 			return .OK
 		}
 		idx -= 1
 		length^ -= 1
 	}
-	printf("\tNothing found star\n")
 
 	length^ = prelen
 	return .No_Match
@@ -464,11 +457,10 @@ match_pattern_ascii :: proc(
 	length: ^int, 
 	options: Options,
 ) -> (err: Error) {
-	pattern := pattern // ^[]Object_ASCII necessary?
+	pattern := pattern
 	buf     := buf
 	length_in := length^
 
-	printf("PATTERN START: buf %v | pattern %v\n", len(buf), len(pattern))
 	if len(buf) == 0 || len(pattern) == 0 {
 		return .No_Match
 	}
@@ -477,9 +469,9 @@ match_pattern_ascii :: proc(
 
 	// always has to be higher than 0
 	for {
+		// TODO bounds checking anywhere?
 		p0 := pattern[0]
 		p1 := pattern[1]
-		printf("\t\t\tp0.type: %v\n", p0.type)
 		
 		if p0.type == .Sentinel || p1.type == .Question_Mark {
 			c := 0 if len(buf) == 0 else buf[0]
@@ -508,7 +500,6 @@ match_pattern_ascii :: proc(
 		c := len(buf) != 0 ? buf[0] : 0
 		
 		if !match_one_ascii(p0, classes, c, options) {
-			printf("\tEND EARLY\n")
 			break
 		} 
 
@@ -518,7 +509,6 @@ match_pattern_ascii :: proc(
 		printf("length: %v, len pattern %v\n", length^, len(pattern))
 	}
 
-	printf("\tNO MATCH\n\n")
   length^ = length_in
 	return .No_Match
 }
