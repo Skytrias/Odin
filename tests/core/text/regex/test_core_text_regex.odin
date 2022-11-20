@@ -108,7 +108,22 @@ ASCII_Cases := [?]Test_Entry {
 	{ "$", "", 0, 0, .No_Match },
 	{ "$", "test", 0, 0, .No_Match },
 	{ "test$", "test", 0, 4, .OK },
-	{ "test$", "test", 0, 4, .OK },
+	{ "test$", "abctest", 3, 4, .OK },
+
+	// dot
+	{ ".", "a", 0, 1, .OK },
+	{ ".", "\n", 0, 0, .No_Match },
+	{ ".", " ", 0, 1, .OK },
+	{ "...", "abc", 0, 3, .OK },
+	{ ".y.", "xyz", 0, 3, .OK },
+
+	// start
+	{ "s*", "expression", 5, 2, .OK },
+	{ "s*", "expresion", 5, 1, .OK },
+	{ "s*", "expresion", 5, 1, .OK },
+	{ "es*", "expreion", 0, 1, .OK }, // .Star error previously
+	// { "es*", "expreion", 4, 1, .OK },
+	// { "es*", "expreion", 0, 1, .OK },
 }
 
 @test

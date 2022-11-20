@@ -8,7 +8,7 @@ package regex
 
 import "core:fmt"
 
-when false {
+when true {
 	printf :: fmt.printf
 } else {
 	printf :: proc(f: string, v: ..any) {}
@@ -354,6 +354,7 @@ match_star_ascii :: proc(pattern: Compiled_ASCII, objects: []Object_ASCII, buf: 
 	pattern := pattern
 	idx := 0
 	prelen := length^
+	// fmt.eprintln(pattern.classes)
 
 	for idx < len(buf) && match_one_ascii(pattern.classes[:], objects[0], buf[idx]) {
 		idx += 1
@@ -434,7 +435,6 @@ match_pattern_ascii :: proc(pattern: Compiled_ASCII, objects: []Object_ASCII, bu
 			c := 0 if len(buf) == 0 else buf[0]
 			printf("[match ?] char: %c\n", c)
 			return match_question(pattern, objects, buf, length, options)
-
 		} else if objects[1].type == .Star {
 			printf("[match *] char: %c\n", buf[0])
 			return match_star(pattern, objects, buf, length, options)
