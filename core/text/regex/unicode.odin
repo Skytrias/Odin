@@ -236,15 +236,20 @@ match_compiled_utf8 :: proc(
 			byte_idx := 0
 			char_idx := 0
 
-			for _, byte_idx in haystack {
+			for byte_idx < len(haystack) {
 				l = 0
-				e := match_pattern_utf8(pattern, haystack, &l, info)
+				e := match_pattern_utf8(pattern, haystack[byte_idx:], &l, info)
 
-				if e == .No_Match {
+				if e != .No_Match {
 					position := byte_idx if .Byte_Index in info.options else char_idx
 					return position, l, e
 				}
 
+				c, rune_size := utf8.decode_rune(haystack[:])
+				if c == utf8.RUNE_ERROR {
+					return  0, 0, .Rune_Error
+				}
+				byte_idx += rune_size
 				char_idx += 1
 			}
 		}
@@ -281,22 +286,12 @@ match_alphanum_utf8 :: proc(r: rune) -> (match_size: int) {
 }
 
 @(private="package")
-match_range_utf8 :: proc(r: rune, buf: []u8) -> (match_size: int) {
-	/*
-		Decode first charater of range. Ensure we have at least 2 characters left.
-		1 for `-` and 1 for the second character.
-	*/
-	if a, la := utf8.decode_rune(buf); a != utf8.RUNE_ERROR && len(buf) >= la + 2 {
-		if buf[la] == '-' {
-			/*
-				Decode second charater of range.
-			*/
-			if b, lb := utf8.decode_rune(buf); b != utf8.RUNE_ERROR {
-				return la + 1 + lb if a >= r && r >= b else 0
-			}
-		}
+match_range_utf8 :: proc(r: rune, range: []rune) -> bool {
+	if len(range) < 3 {
+		return false
 	}
-	return 0
+
+	return range[1] == '-' && r >= range[0] && r <= range[2]
 }
 
 @(private="package")
@@ -314,7 +309,7 @@ is_meta_character_utf8 :: proc(r: rune) -> (match_size: int) {
 }
 
 @(private="package")
-match_meta_character_utf8 :: proc(r: rune, meta: rune, unicode_match: bool) -> (match_size: int) {
+match_meta_character_utf8 :: proc(r: rune, meta: rune) -> (match_size: int) {
 	switch meta {
 	case 'd': return match_digit       (r)
 	case 'D': return utf8.rune_size(r) if match_digit(r)      == 0 else 0
@@ -326,53 +321,37 @@ match_meta_character_utf8 :: proc(r: rune, meta: rune, unicode_match: bool) -> (
 	}
 }
 
-/*
-match_character_class :: proc(r: rune)
-
-static int matchcharclass(char c, const char* str)
-{
-	do
-	{
-	if (matchrange(c, str))
-	{
-		return 1;
-	}
-	else if (str[0] == '\\')
-	{
-		/* Escape-char: increment str-ptr and match on next char */
-		str += 1;
-		if (matchmetachar(c, str))
-		{
-		return 1;
-		}
-		else if ((c == str[0]) && !ismetachar(c))
-		{
-		return 1;
-		}
-	}
-	else if (c == str[0])
-	{
-		if (c == '-')
-		{
-		return ((str[-1] == '\0') || (str[1] == '\0'));
-		}
-		else
-		{
-		return 1;
-		}
-	}
-	}
-	while (*str++ != '\0');
-
-	return 0;
-}
-*/
-
 @(private="package")
-match_character_class_utf8 :: proc(r: rune, class: []rune) -> (matched: bool) {
+match_character_class_utf8 :: proc(r: rune, class: []rune) -> bool {
+	class := class
 
+	for len(class) > 0 {
+		if match_range_utf8(r, class) {
+			return true
+		} else if class[0] == '\\' {
+			/* Escape-char: Eat `\\` and match on next char. */
+			class = class[1:]
+			if len(class) == 0 {
+				return false
+			}
+
+			if match_meta_character_utf8(r, class[0]) > 0 {
+				return true
+			} else if r == class[0] && is_meta_character_utf8(r) > 0 {
+				return true
+			}
+		} else if r == class[0] {
+			if r == '-' && len(class) == 1 {
+				return true
+			} else {
+				return true
+			}
+		}
+
+		class = class[1:]
+	}
+	
 	return false
-
 }
 
 @(private="package")
@@ -380,7 +359,7 @@ match_one_utf8 :: proc(
 	object: Object_UTF8, 
 	char: rune,
 	info: Info_UTF8,
-) -> (matched: bool) {
+) -> bool {
 	printf("[match 1] %c (%v)\n", char, object.type)
 
 	#partial switch object.type {
@@ -477,7 +456,7 @@ match_plus_utf8 :: proc(
 ) -> (err: Error) {
 	idx := 0
 
-	// // TODO do proper rune
+	// // TODO(Skytrias): do proper rune
 	// for idx < len(buf) && match_one_utf8(p, rune(buf[idx]), info) {
 	// 	idx += 1
 	// 	length^ += 1
@@ -485,7 +464,7 @@ match_plus_utf8 :: proc(
 
 	// // run till first character
 	// for idx > 0 {
-	// 	// TODO do proper rune walking
+	// 	// TODO(Skytrias): do proper rune walking
 	// 	if match_pattern_utf8(pattern, string(buf[idx:]), length, info) == .OK {
 	// 		return .OK
 	// 	}
@@ -557,6 +536,7 @@ match_pattern_utf8 :: proc(
 				return .Rune_Error
 			}
 		}
+		printf("RUNE %v -> %v\n", c, rune_size)
 
 		if p0.type == .Sentinel || p1.type == .Question_Mark {
 			printf("[match ?] char: %v | TYPES: %v & %v\n", c, p0.type, p1.type)

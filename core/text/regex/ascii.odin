@@ -8,7 +8,7 @@ package regex
 
 import "core:fmt"
 
-when false {
+when true {
 	printf :: fmt.printf
 } else {
 	printf :: proc(f: string, v: ..any) {}
@@ -249,6 +249,7 @@ match_compiled_ascii :: proc(
 			e := match_pattern_ascii(pattern[1:], buf, &l, info)
 			return 0, l, e
 		} else {
+			// TODO(Skytrias): could extend this to still walk in utf8 jumps?
 			for _, byte_idx in haystack {
 				l = 0
 				e := match_pattern_ascii(pattern, buf[byte_idx:], &l, info)
@@ -268,17 +269,17 @@ match_compiled_ascii :: proc(
 	Private functions:
 */
 @(private="package")
-match_digit_ascii :: proc(c: u8) -> (matched: bool) {
+match_digit_ascii :: proc(c: u8) -> bool {
 	return '0' <= c && c <= '9'
 }
 
 @(private="package")
-match_alpha_ascii :: proc(c: u8) -> (matched: bool) {
+match_alpha_ascii :: proc(c: u8) -> bool {
 	return ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z')
 }
 
 @(private="package")
-match_whitespace_ascii :: proc(c: u8) -> (matched: bool) {
+match_whitespace_ascii :: proc(c: u8) -> bool {
 	switch c {
 	case '\t', '\n', '\v', '\f', '\r', ' ', 0x85, 0xa0: return true
 	case:                                               return false
@@ -286,12 +287,12 @@ match_whitespace_ascii :: proc(c: u8) -> (matched: bool) {
 }
 
 @(private="package")
-match_alphanum_ascii :: proc(c: u8) -> (matched: bool) {
+match_alphanum_ascii :: proc(c: u8) -> bool {
 	return c == '_' || match_alpha_ascii(c) || match_digit_ascii(c)
 }
 
 @(private="package")
-match_range_ascii :: proc(c: u8, range: []u8) -> (matched: bool) {
+match_range_ascii :: proc(c: u8, range: []u8) -> bool {
 	if len(range) < 3 {
 		return false
 	}
@@ -299,17 +300,17 @@ match_range_ascii :: proc(c: u8, range: []u8) -> (matched: bool) {
 }
 
 @(private="package")
-match_dot_ascii :: proc(c: u8, match_newline: bool) -> (matched: bool) {
+match_dot_ascii :: proc(c: u8, match_newline: bool) -> bool {
 	return match_newline || c != '\n' && c != '\r'
 }
 
 @(private="package")
-is_meta_character_ascii :: proc(c: u8) -> (matched: bool) {
+is_meta_character_ascii :: proc(c: u8) -> bool {
 	return (c == 's') || (c == 'S') || (c == 'w') || (c == 'W') || (c == 'd') || (c == 'D')
 }
 
 @(private="package")
-match_meta_character_ascii :: proc(c, meta: u8) -> (matched: bool) {
+match_meta_character_ascii :: proc(c, meta: u8) -> bool {
 	switch meta {
 	case 'd': return  match_digit_ascii     (c)
 	case 'D': return !match_digit_ascii     (c)
@@ -322,11 +323,11 @@ match_meta_character_ascii :: proc(c, meta: u8) -> (matched: bool) {
 }
 
 @(private="package")
-match_character_class_ascii :: proc(c: u8, class: []u8) -> (matched: bool) {
+match_character_class_ascii :: proc(c: u8, class: []u8) -> bool {
 	class := class
 
 	for len(class) > 0 {
-		if (match_range_ascii(c, class)) {
+		if match_range_ascii(c, class) {
 			return true
 		} else if class[0] == '\\' {
 			/* Escape-char: Eat `\\` and match on next char. */
@@ -335,7 +336,7 @@ match_character_class_ascii :: proc(c: u8, class: []u8) -> (matched: bool) {
 				return false
 			}
 
-			if (match_meta_character_ascii(c, class[0])) {
+			if match_meta_character_ascii(c, class[0]) {
 				return true
 			} else if c == class[0] && !is_meta_character_ascii(c) {
 				return true
@@ -358,7 +359,7 @@ match_one_ascii :: proc(
 	object: Object_ASCII,
 	char: u8, 
 	info: Info_ASCII,
-) -> (matched: bool) {
+) -> bool {
 	printf("[match 1] %c (%v)\n", char, object.type)
 	#partial switch object.type {
 	case .Sentinel:                return false

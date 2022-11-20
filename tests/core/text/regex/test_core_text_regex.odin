@@ -142,11 +142,35 @@ ASCII_Meta_Cases := [?]Test_Entry {
 	{ "|", "test", 0, 0, .Operation_Unsupported }
 }
 
+test_check_entry :: proc(
+	t: ^testing.T,
+	entry: Test_Entry,
+	offset: int,
+	length: int,
+	err: regex.Error,
+) {
+	expect(
+		t, 
+		offset == entry.offset && length == entry.length && err == entry.err, 
+		fmt.tprintf(
+			"\nRGX:%v\t\tSTR:%v\nExpected match result {{offset=%v, len=%v, res=%v}}, got {{offset=%v, len=%v, res=%v}}\n", 
+			entry.pattern, 
+			entry.haystack, 
+			entry.offset, 
+			entry.length, 
+			entry.err, 
+			offset, 
+			length, 
+			err,
+		),
+	)
+}
+
 @test
 test_ascii_simple_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Simple_Cases {
 		offset, length, err := regex.match_string_ascii(entry.pattern, entry.haystack)
-		expect(t, offset == entry.offset && length == entry.length && err == entry.err, fmt.tprintf("Expected match result {{offset=%v, len=%v, res=%v}}, got {{offset=%v, len=%v, res=%v}}", entry.offset, entry.length, entry.err, offset, length, err))
+		test_check_entry(t, entry, offset, length, err)
 	}
 }
 
@@ -154,7 +178,23 @@ test_ascii_simple_cases :: proc(t: ^testing.T) {
 test_ascii_meta_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Meta_Cases {
 		offset, length, err := regex.match_string_ascii(entry.pattern, entry.haystack)
-		expect(t, offset == entry.offset && length == entry.length && err == entry.err, fmt.tprintf("Expected match result {{offset=%v, len=%v, res=%v}}, got {{offset=%v, len=%v, res=%v}}", entry.offset, entry.length, entry.err, offset, length, err))
+		test_check_entry(t, entry, offset, length, err)
+	}
+}
+
+@test
+test_utf8_simple_cases :: proc(t: ^testing.T) {
+	for entry in ASCII_Simple_Cases {
+		offset, length, err := regex.match_string_utf8(entry.pattern, entry.haystack)
+		test_check_entry(t, entry, offset, length, err)
+	}
+}
+
+@test
+test_utf8_meta_cases :: proc(t: ^testing.T) {
+	for entry in ASCII_Meta_Cases {
+		offset, length, err := regex.match_string_utf8(entry.pattern, entry.haystack)
+		test_check_entry(t, entry, offset, length, err)
 	}
 }
 
@@ -166,8 +206,10 @@ main :: proc() {
 	context.allocator = mem.tracking_allocator(&track)
 
 	t: testing.T
-	test_ascii_simple_cases(&t)
-	test_ascii_meta_cases(&t)
+	// test_ascii_simple_cases(&t)
+	// test_ascii_meta_cases(&t)
+	test_utf8_simple_cases(&t)
+	// test_utf8_meta_cases(&t)
 
 	fmt.printf("%v/%v tests successful.\n", TEST_count - TEST_fail, TEST_count)
 	if TEST_fail > 0 {
