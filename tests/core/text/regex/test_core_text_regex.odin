@@ -1,3 +1,9 @@
+/*
+	Copyright      2022 Michael Kutowski <skytrias@protonmail.com>
+	Made available under Odin's BSD-3 license.
+
+	`core:regex` began life as a port of the public domain [Tiny Regex by kokke](https://github.com/kokke/tiny-regex-c), with thanks.
+*/
 package text_core_test_regex
 
 import "core:os"
@@ -163,6 +169,27 @@ UTF8_Specific_Cases := [?]Test_Entry {
 	{ "恥", "a", {}, .No_Match },
 	{ "a", "恥", {}, .No_Match },
 
+	// digit
+	{ "\\d", "恥", {}, .No_Match },
+	{ "\\D", "恥", { 0, 0, 1 }, .OK },
+	{ "\\d", "恥123", { 3, 1, 1 }, .OK },
+	{ "\\D", "123恥", { 3, 3, 1 }, .OK },
+	
+	// alpha
+	{ "\\w", "恥", { 0, 0, 1 }, .OK },
+	{ "\\w", " 恥", { 1, 1, 1 }, .OK },
+	{ "\\W", "恥 ", { 3, 1, 1 }, .OK },
+	
+	// space
+	{ "\\s", "恥", {}, .No_Match },
+	{ "恥\\s", "恥恥恥 ", { 6, 2, 2 }, .OK },
+	{ "恥\\s恥", "恥 恥", { 0, 0, 3 }, .OK },
+	{ "\\S恥", "恥恥", { 0, 0, 2 }, .OK },
+	{ "\\s\\S", "恥 a", { 3, 1, 2 }, .OK },
+
+	// character class
+	{ "[Öö]", "Whatö", { 4, 4, 1 }, .OK },
+
 	// meta
 	
 	// begin with unicode
@@ -191,7 +218,7 @@ test_check_match_entry :: proc(
 ) {
 	expect(
 		t, 
-		match == entry.match, 
+		match == entry.match && err == entry.err, 
 		fmt.tprintf(
 			"\nRGX:%v\t\tSTR:%v\nExpected match result %v = %v, got %v = %v\n", 
 			entry.pattern, 

@@ -1,5 +1,6 @@
 /*
-	Copyright 2021 Jeroen van Rijn <nom@duclavier.com>.
+	Copyright 2021-2022 Jeroen van Rijn  <nom@duclavier.com>
+	Copyright      2022 Michael Kutowski <skytrias@protonmail.com>
 	Made available under Odin's BSD-3 license.
 
 	`core:regex` began life as a port of the public domain [Tiny Regex by kokke](https://github.com/kokke/tiny-regex-c), with thanks.
@@ -116,11 +117,17 @@ compile_utf8 :: proc(pattern: string) -> (
 					Character class:
 				*/
 
-					/*
+				/*
 					Eat the `[` and decode the next character.
-					*/
-					buf = buf[1:]
-					char, rune_size = utf8.decode_rune(buf)
+				*/
+				if len(buf) <= 1 {
+					/* '['' as last char in pattern -> invalid regular expression. */
+					err = .Pattern_Ended_Unexpectedly
+					return
+				}
+
+				buf = buf[1:]
+				char, rune_size = utf8.decode_rune(buf)
 
 				/*
 					Remember where the rune buffer starts in `.classes`.
@@ -129,7 +136,7 @@ compile_utf8 :: proc(pattern: string) -> (
 
 				switch char {
 					case utf8.RUNE_ERROR: {
-						err = .Pattern_Ended_Unexpectedly
+						err = .Rune_Error
 						return
 					}
 
@@ -138,7 +145,13 @@ compile_utf8 :: proc(pattern: string) -> (
 							Set object type to inverse and eat `^`.
 						*/
 						objects[j].type = .Inverse_Character_Class
-						buf = buf[1:]
+
+						if len(buf) <= rune_size {
+							err = .Pattern_Ended_Unexpectedly
+							return
+						}
+
+						buf = buf[rune_size:]
 						char, rune_size = utf8.decode_rune(buf)
 					}
 					
@@ -152,7 +165,7 @@ compile_utf8 :: proc(pattern: string) -> (
 				*/
 				for {
 					if char == utf8.RUNE_ERROR {
-						err = .Pattern_Ended_Unexpectedly
+						err = .Rune_Error
 						return
 					}
 
@@ -170,6 +183,11 @@ compile_utf8 :: proc(pattern: string) -> (
 						classes[ccl_buf_idx] = char
 						ccl_buf_idx += 1
 
+						if len(buf) <= rune_size {
+							err = .Pattern_Ended_Unexpectedly
+							return
+						}
+ 
 						buf = buf[1:]
 						char, rune_size = utf8.decode_rune(buf)				
 					}
@@ -186,7 +204,12 @@ compile_utf8 :: proc(pattern: string) -> (
 					classes[ccl_buf_idx] = char
 					ccl_buf_idx += 1				
 
-					buf = buf[1:]
+					if len(buf) <= rune_size {
+						err = .Pattern_Ended_Unexpectedly
+						return
+					}
+
+					buf = buf[rune_size:]
 					char, rune_size = utf8.decode_rune(buf)				
 				}
 

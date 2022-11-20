@@ -1,5 +1,6 @@
 /*
-	Copyright 2021 Jeroen van Rijn <nom@duclavier.com>.
+	Copyright 2021-2022 Jeroen van Rijn  <nom@duclavier.com>
+	Copyright      2022 Michael Kutowski <skytrias@protonmail.com>
 	Made available under Odin's BSD-3 license.
 
 	`core:regex` began life as a port of the public domain [Tiny Regex by kokke](https://github.com/kokke/tiny-regex-c), with thanks.
