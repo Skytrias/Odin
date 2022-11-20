@@ -8,19 +8,22 @@ package regex
 
 import "core:fmt"
 
-when true {
+when false {
 	printf :: fmt.printf
 } else {
 	printf :: proc(f: string, v: ..any) {}
 }
-
 
 /* Definitions: */
 
 /*
 	Public procedures
 */
-compile_ascii :: proc(pattern: string) -> (compiled: Compiled_ASCII, err: Error) {
+compile_ascii :: proc(pattern: string) -> (
+	objects: [MAX_REGEXP_OBJECTS + 1]Object_ASCII, 
+	classes: [MAX_CHAR_CLASS_LEN]u8,
+	err: Error,
+) {
 	/*
 		The sizes of the two static arrays substantiate the static RAM usage of this package.
 		MAX_REGEXP_OBJECTS is the max number of symbols in the expression.
@@ -30,13 +33,21 @@ compile_ascii :: proc(pattern: string) -> (compiled: Compiled_ASCII, err: Error)
 	*/
 
 	buf := transmute([]u8)pattern
-
 	ccl_buf_idx := u16(0)
-
 	j:         int  /* index into re_compiled    */
 	char:      u8
 
+	if len(buf) == 0 {
+		err = .Pattern_Empty
+		return
+	}
+
 	for len(buf) > 0 {
+		// range check j for max range
+		if j + 1 > MAX_REGEXP_OBJECTS + 1 {
+			err = .Pattern_Too_Long
+			return
+		}
 
 		char = buf[0]
 
@@ -44,17 +55,18 @@ compile_ascii :: proc(pattern: string) -> (compiled: Compiled_ASCII, err: Error)
 		/*
 			Meta-characters:
 		*/
-		case '^': compiled.objects[j].type = .Begin
-		case '$': compiled.objects[j].type = .End
-		case '.': compiled.objects[j].type = .Dot
-		case '*': compiled.objects[j].type = .Star
-		case '+': compiled.objects[j].type = .Plus
-		case '?': compiled.objects[j].type = .Question_Mark
+		case '^': objects[j].type = .Begin
+		case '$': objects[j].type = .End
+		case '.': objects[j].type = .Dot
+		case '*': objects[j].type = .Star
+		case '+': objects[j].type = .Plus
+		case '?': objects[j].type = .Question_Mark
 		case '|':
 			/*
 				Branch is currently bugged
 			*/
-			return {}, .Operation_Unsupported
+			err = .Operation_Unsupported
+			return
 
 		/*
 			Escaped character-classes (\s \w ...):
@@ -65,7 +77,8 @@ compile_ascii :: proc(pattern: string) -> (compiled: Compiled_ASCII, err: Error)
 			*/
 			if len(buf) <= 1 {
 				/* '\\' as last char in pattern -> invalid regular expression. */
-				return {}, .Pattern_Ended_Unexpectedly
+				err = .Pattern_Ended_Unexpectedly
+				return
 			}
 
 			buf = buf[1:]
@@ -75,18 +88,18 @@ compile_ascii :: proc(pattern: string) -> (compiled: Compiled_ASCII, err: Error)
 			/*
 				Meta-character:
 			*/
-			case 'd': compiled.objects[j].type = .Digit
-			case 'D': compiled.objects[j].type = .Not_Digit
-			case 'w': compiled.objects[j].type = .Alpha
-			case 'W': compiled.objects[j].type = .Not_Alpha
-			case 's': compiled.objects[j].type = .Whitespace
-			case 'S': compiled.objects[j].type = .Not_Whitespace
+			case 'd': objects[j].type = .Digit
+			case 'D': objects[j].type = .Not_Digit
+			case 'w': objects[j].type = .Alpha
+			case 'W': objects[j].type = .Not_Alpha
+			case 's': objects[j].type = .Whitespace
+			case 'S': objects[j].type = .Not_Whitespace
 			case:
 				/*
 					Escaped character, e.g. `\`, '.' or '$'
 				*/
-				compiled.objects[j].type   = .Char
-				compiled.objects[j].char.c = char
+				objects[j].type   = .Char
+				objects[j].c = char
 			}
 
 		case '[':
@@ -99,7 +112,8 @@ compile_ascii :: proc(pattern: string) -> (compiled: Compiled_ASCII, err: Error)
 			*/
 			if len(buf) <= 1 {
 				/* '['' as last char in pattern -> invalid regular expression. */
-				return {}, .Pattern_Ended_Unexpectedly
+				err = .Pattern_Ended_Unexpectedly
+				return
 			}
 
 			buf = buf[1:]
@@ -115,18 +129,19 @@ compile_ascii :: proc(pattern: string) -> (compiled: Compiled_ASCII, err: Error)
 				/*
 					Set object type to inverse and eat `^`.
 				*/
-				compiled.objects[j].type = .Inverse_Character_Class
+				objects[j].type = .Inverse_Character_Class
 
 				if len(buf) <= 1 {
 					/* '^' as last char in pattern -> invalid regular expression. */
-					return {}, .Pattern_Ended_Unexpectedly
+					err = .Pattern_Ended_Unexpectedly
+					return
 				}
 
 				buf = buf[1:]
 				char = buf[0]
 
 			case:
-				compiled.objects[j].type = .Character_Class
+				objects[j].type = .Character_Class
 			}
 
 			/*
@@ -135,19 +150,22 @@ compile_ascii :: proc(pattern: string) -> (compiled: Compiled_ASCII, err: Error)
 			for {
 				if char == '\\' {
 					if len(buf) == 0 {
-						return {}, .Pattern_Ended_Unexpectedly  // Expected an escaped character
+						err = .Pattern_Ended_Unexpectedly  // Expected an escaped character
+						return
 					}
 
 					if ccl_buf_idx >= MAX_CHAR_CLASS_LEN {
-						return {}, .Character_Class_Buffer_Too_Small
+						err = .Character_Class_Buffer_Too_Small
+						return
 					}
 
-					compiled.classes[ccl_buf_idx].c = char
+					classes[ccl_buf_idx] = char
 					ccl_buf_idx += 1
 
 					if len(buf) <= 1 {
 						/* '\\' as last char in pattern -> invalid regular expression. */
-						return {}, .Pattern_Ended_Unexpectedly
+						err = .Pattern_Ended_Unexpectedly
+						return
 					}
 
 					buf = buf[1:]
@@ -159,86 +177,75 @@ compile_ascii :: proc(pattern: string) -> (compiled: Compiled_ASCII, err: Error)
 				}
 
 				if ccl_buf_idx >= MAX_CHAR_CLASS_LEN {
-					return {}, .Character_Class_Buffer_Too_Small
+					err = .Character_Class_Buffer_Too_Small
+					return
 				}
 
-				compiled.classes[ccl_buf_idx].c = char
+				classes[ccl_buf_idx] = char
 				ccl_buf_idx += 1				
 
 				if len(buf) <= 1 {
 					/* pattern ended before ']' -> invalid regular expression. */
-					return {}, .Pattern_Ended_Unexpectedly
+					err = .Pattern_Ended_Unexpectedly
+					return
 				}
 
 				buf = buf[1:]
 				char = buf[0]
 			}
 
-			compiled.objects[j].class = Slice{begin, ccl_buf_idx - begin}
+			objects[j].class = Slice{begin, ccl_buf_idx - begin}
 
 		case:
-			/*
-				Other characters:
-			*/
-			compiled.objects[j].type   = .Char
-			compiled.objects[j].char.c = char
+			// Other characters:
+			objects[j].type   = .Char
+			objects[j].c = char
 		}
 
-		/*
-			Advance pattern
-		*/
-		j  += 1
+		// Advance pattern
+		j += 1
 		buf = buf[1:]
 	}
 
-	/*
-		Finish pattern with a Sentinel
-	*/
-	compiled.objects[j].type = .Sentinel
-
+	// Finish pattern with a Sentinel
+	objects[j].type = .Sentinel
 	return
 }
 
 match_string_ascii :: proc(pattern, haystack: string, options := DEFAULT_OPTIONS) -> (position, length: int, err: Error) {
 	options := options | { .ASCII_Only }
-	compiled := compile_ascii(pattern) or_return
-	return match_compiled_ascii(compiled, haystack, options)
+	objects, classes := compile_ascii(pattern) or_return
+	return match_compiled_ascii(objects[:], classes[:], haystack, options)
 }
 
-match_compiled_ascii :: proc(pattern: Compiled_ASCII, haystack: string, options := DEFAULT_OPTIONS) -> (position, length: int, err: Error) {
-	/*
-		Bail on empty pattern.
-	*/
-	pattern  := pattern
-	objects  := pattern.objects[:]
+match_compiled_ascii :: proc(
+	pattern: []Object_ASCII, 
+	classes: []u8,
+	haystack: string, 
+	options := DEFAULT_OPTIONS,
+) -> (position, length: int, err: Error) {
 	haystack := haystack
 	buf      := transmute([]u8)haystack
-
 	l := int(0)
 
-	if objects[0].type != .Sentinel {
-		if objects[0].type == .Begin {
-			e := match_pattern_ascii(pattern, objects[1:], buf, &l, options)
+	// Bail on empty pattern.
+	if len(pattern) != 0 {
+		if pattern[0].type == .Begin {
+			e := match_pattern_ascii(pattern[1:], classes, buf, &l, options)
 			return 0, l, e
 		} else {
 			for _, byte_idx in haystack {
 				l = 0
-				e := match_pattern(pattern, objects[:], buf[byte_idx:], &l, options)
+				e := match_pattern_ascii(pattern, classes, buf[byte_idx:], &l, options)
 
-				#partial switch e {
-				case .No_Match:
-					/*
-						Iterate.
-					*/
-				case:
-					/*
-						Either a match or an error, so return.
-					*/
+				// Either a match or an error, so return.
+				if e != .No_Match {
 					return byte_idx, l, e
 				}
 			}
 		}
 	}
+
 	return 0, 0, .No_Match
 }
 
@@ -269,11 +276,11 @@ match_alphanum_ascii :: proc(c: u8) -> (matched: bool) {
 }
 
 @(private="package")
-match_range_ascii :: proc(c: u8, range: []Character) -> (matched: bool) {
+match_range_ascii :: proc(c: u8, range: []u8) -> (matched: bool) {
 	if len(range) < 3 {
 		return false
 	}
-	return range[1].c == '-' && c >= range[0].c && c <= range[2].c
+	return range[1] == '-' && c >= range[0] && c <= range[2]
 }
 
 @(private="package")
@@ -300,25 +307,25 @@ match_meta_character_ascii :: proc(c, meta: u8) -> (matched: bool) {
 }
 
 @(private="package")
-match_character_class_ascii :: proc(c: u8, class: []Character) -> (matched: bool) {
+match_character_class_ascii :: proc(c: u8, class: []u8) -> (matched: bool) {
 	class := class
 
 	for len(class) > 0 {
-		if (match_range(c, class)) {
+		if (match_range_ascii(c, class)) {
 			return true
-		} else if class[0].c == '\\' {
+		} else if class[0] == '\\' {
 			/* Escape-char: Eat `\\` and match on next char. */
 			class = class[1:]
 			if len(class) == 0 {
 				return false
 			}
 
-			if (match_meta_character(c, class[0].c)) {
+			if (match_meta_character_ascii(c, class[0])) {
 				return true
-			} else if c == class[0].c && !is_meta_character(c) {
+			} else if c == class[0] && !is_meta_character_ascii(c) {
 				return true
 			}
-		} else if c == class[0].c {
+		} else if c == class[0] {
 			if c == '-' && len(class) == 1 {
 				return true
 			} else {
@@ -332,59 +339,84 @@ match_character_class_ascii :: proc(c: u8, class: []Character) -> (matched: bool
 }
 
 @(private="package")
-match_one_ascii :: proc(classes: []Character, object: Object_ASCII, char: u8, options := DEFAULT_OPTIONS) -> (matched: bool) {
+match_one_ascii :: proc(
+	object: Object_ASCII,
+	classes: []u8, 
+	char: u8, 
+	options: Options,
+) -> (matched: bool) {
 	printf("[match 1] %c (%v)\n", char, object.type)
 	#partial switch object.type {
 	case .Sentinel:                return false
-	case .Dot:                     return  match_dot(char, .Dot_Matches_Newline in options)
-	case .Character_Class:         return  match_character_class(char, classes)
-	case .Inverse_Character_Class: return !match_character_class(char, classes)
-	case .Digit:                   return  match_digit(char)
-	case .Not_Digit:               return !match_digit(char)
-	case .Alpha:                   return  match_alphanum(char)
-	case .Not_Alpha:               return !match_alphanum(char)
-	case .Whitespace:              return  match_whitepace(char)
-	case .Not_Whitespace:          return !match_whitepace(char)
-	case:                          return  object.char.c == char
+	case .Dot:                     return  match_dot_ascii(char, .Dot_Matches_Newline in options)
+	case .Character_Class:         return  match_character_class_ascii(char, classes)
+	case .Inverse_Character_Class: return !match_character_class_ascii(char, classes)
+	case .Digit:                   return  match_digit_ascii(char)
+	case .Not_Digit:               return !match_digit_ascii(char)
+	case .Alpha:                   return  match_alphanum_ascii(char)
+	case .Not_Alpha:               return !match_alphanum_ascii(char)
+	case .Whitespace:              return  match_whitespace_ascii(char)
+	case .Not_Whitespace:          return !match_whitespace_ascii(char)
+	case:                          
+		res := object.c == char
+		printf("\tRES: %v (%v == %v)\n", res, rune(object.c), rune(char))
+		return res
 	}
 }
 
 @(private="package")
-match_star_ascii :: proc(pattern: Compiled_ASCII, objects: []Object_ASCII, buf: []u8, length: ^int, options: Options) -> (err: Error) {
-	pattern := pattern
+match_star_ascii :: proc(
+	p: Object_ASCII,
+	pattern: []Object_ASCII, 
+	classes: []u8,
+	buf: []u8,
+	length: ^int, 
+	options: Options,
+) -> (err: Error) {
 	idx := 0
 	prelen := length^
-	// fmt.eprintln(pattern.classes)
 
-	for idx < len(buf) && match_one_ascii(pattern.classes[:], objects[0], buf[idx]) {
+	printf("INSIDE STAR\n")
+	for idx < len(buf) && match_one_ascii(p, classes, buf[idx], options) {
 		idx += 1
 		length^ += 1
 	}
 	printf("idx: %v, length: %v\n", idx, length^)
 
-	for idx > 0 {
-		if match_pattern_ascii(pattern, objects[2:], buf[idx:], length, options) == .OK {
+	// run till last character
+	for idx >= 0 {
+		if match_pattern_ascii(pattern, classes, buf[idx:], length, options) == .OK {
+			printf("\tSTAR OKAY\n")
 			return .OK
 		}
 		idx -= 1
+		length^ -= 1
 	}
+	printf("\tNothing found star\n")
 
 	length^ = prelen
 	return .No_Match
 }
 
 @(private="package")
-match_plus_ascii :: proc(pattern: Compiled_ASCII, objects: []Object_ASCII, buf: []u8, length: ^int, options: Options) -> (err: Error) {
-	pattern := pattern
+match_plus_ascii :: proc(
+	p: Object_ASCII,
+	pattern: []Object_ASCII,
+	classes: []u8,
+	buf: []u8, 
+	length: ^int, 
+	options: Options,
+) -> (err: Error) {
 	idx := 0
 
-	for idx < len(buf) && match_one_ascii(pattern.classes[:], objects[0], buf[idx]) {
+	for idx < len(buf) && match_one_ascii(p, classes, buf[idx], options) {
 		idx += 1
 		length^ += 1
 	}
 
+	// run till first character
 	for idx > 0 {
-		if match_pattern_ascii(pattern, objects[2:], buf[idx:], length, options) == .OK {
+		if match_pattern_ascii(pattern, classes, buf[idx:], length, options) == .OK {
 			return .OK
 		}
 		idx -= 1
@@ -395,94 +427,114 @@ match_plus_ascii :: proc(pattern: Compiled_ASCII, objects: []Object_ASCII, buf: 
 }
 
 @(private="package")
-match_question_ascii :: proc(pattern: Compiled_ASCII, objects: []Object_ASCII, buf: []u8, length: ^int, options: Options) -> (err: Error) {
-	pattern := pattern
+match_question_ascii :: proc(
+	p: Object_ASCII,
+	pattern: []Object_ASCII, 
+	classes: []u8,
+	buf: []u8, 
+	length: ^int, 
+	options: Options,
+) -> (err: Error) {
+	if p.type == .Sentinel {
+		return .OK
+	}
 
-	if objects[0].type == .Sentinel {
+	if match_pattern_ascii(pattern, classes, buf, length, options) == .OK {
 		return .OK
 	}
-	if match_pattern_ascii(pattern, objects[2:], buf, length, options) == .OK {
-		return .OK
-	}
-	if len(buf) != 0 && match_one_ascii(pattern.classes[:], objects[0], buf[0]) {
-		if match_pattern_ascii(pattern, objects[2:], buf, length, options) == .OK {
+
+	// check first character
+	if len(buf) > 0 && match_one_ascii(p, classes, buf[0], options) {
+		// check upcoming content
+		if match_pattern_ascii(pattern, classes, buf[1:], length, options) == .OK {
 			length^ += 1
 			return .OK
 		}
 	}
+
 	return .No_Match
 }
 
 /* Iterative matching */
 @(private="package")
-match_pattern_ascii :: proc(pattern: Compiled_ASCII, objects: []Object_ASCII, buf: []u8, length: ^int, options: Options) -> (err: Error) {
-	objects := objects
-	pattern := pattern
+match_pattern_ascii :: proc(
+	pattern: []Object_ASCII, 
+	classes: []u8,
+	buf: []u8, 
+	length: ^int, 
+	options: Options,
+) -> (err: Error) {
+	pattern := pattern // ^[]Object_ASCII necessary?
 	buf     := buf
-
 	length_in := length^
 
-	if len(buf) == 0 || len(objects) == 0 {
+	printf("PATTERN START: buf %v | pattern %v\n", len(buf), len(pattern))
+	if len(buf) == 0 || len(pattern) == 0 {
 		return .No_Match
 	}
 
 	printf("[match] %v\n", string(buf))
 
+	// always has to be higher than 0
 	for {
-		// printf("type: %v %v\n", objects[0].type, objects[1].type)
-
-		if objects[0].type == .Sentinel || objects[1].type == .Question_Mark {
+		p0 := pattern[0]
+		p1 := pattern[1]
+		printf("\t\t\tp0.type: %v\n", p0.type)
+		
+		if p0.type == .Sentinel || p1.type == .Question_Mark {
 			c := 0 if len(buf) == 0 else buf[0]
-			printf("[match ?] char: %c\n", c)
-			return match_question(pattern, objects, buf, length, options)
-		} else if objects[1].type == .Star {
+			printf("[match ?] char: %c | TYPES: %v & %v\n", c, p0.type, p1.type)
+			return match_question_ascii(p0, pattern[2:], classes, buf, length, options)
+		} else if p1.type == .Star {
 			printf("[match *] char: %c\n", buf[0])
-			return match_star(pattern, objects, buf, length, options)
-
-		} else if objects[1].type == .Plus {
+			return match_star_ascii(p0, pattern[2:], classes, buf, length, options)
+		} else if p1.type == .Plus {
 			printf("[match +] char: %c\n", buf[0])
-			return match_plus(pattern, objects, buf, length, options)
-
-		} else if objects[0].type == .End && objects[1].type == .Sentinel {
-	  		if len(buf) == 0 {
-	  			return .OK
-	  		}
-	  		return .No_Match
+			return match_plus_ascii(p0, pattern[2:], classes, buf, length, options)
+		} else if p0.type == .End && p1.type == .Sentinel {
+			if len(buf) == 0 {
+				return .OK
+			}
+			return .No_Match
 		}
 
 		/*  Branching is not working properly
-			else if (pattern[1].type == BRANCH)
+			else if (p1.type == BRANCH)
 			{
 			  return (matchpattern(pattern, text) || matchpattern(&pattern[2], text));
 			}
 		*/
 
-		if len(buf) == 0 || !match_one(pattern.classes[:], objects[0], buf[0], options) {
+		c := len(buf) != 0 ? buf[0] : 0
+		
+		if !match_one_ascii(p0, classes, c, options) {
+			printf("\tEND EARLY\n")
 			break
-		} else {
-			length^ += 1
-			buf     = buf[1:]
-			objects = objects[1:]
-		}
-		printf("length: %v\n", length^)
+		} 
+
+		length^ += 1
+		buf     = buf[1:]
+		pattern = pattern[1:]
+		printf("length: %v, len pattern %v\n", length^, len(pattern))
 	}
 
-  	length^ = length_in
+	printf("\tNO MATCH\n\n")
+  length^ = length_in
 	return .No_Match
 }
 
-print_ascii :: proc(compiled: Compiled_ASCII) {
-	for o in compiled.objects {
+print_ascii :: proc(pattern: []Object_ASCII, classes: []u8) {
+	for o in pattern {
 		if o.type == .Sentinel {
 			break
 		} else if o.type == .Character_Class || o.type == .Inverse_Character_Class {
 			fmt.printf("type: %v[ ", o.type)
 			for i := o.class.start_idx; i < o.class.start_idx + o.class.length; i += 1 {
-				fmt.printf("%c, ", compiled.classes[i].c)
+				fmt.printf("%c, ", classes[i])
 			}
 			fmt.printf("]\n")
 		} else if o.type == .Char {
-			fmt.printf("type: %v{{'%c'}}\n", o.type, o.char.c)
+			fmt.printf("type: %v{{'%c'}}\n", o.type, o.c)
 		} else {
 			fmt.printf("type: %v\n", o.type)
 		}

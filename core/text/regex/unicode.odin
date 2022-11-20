@@ -300,8 +300,8 @@ match_meta_character_utf8 :: proc(r: rune, meta: rune, unicode_match: bool) -> (
 	case 'D': return utf8.rune_size(r) if match_digit(r)      == 0 else 0
 	case 'w': return match_alphanum    (r)
 	case 'W': return utf8.rune_size(r) if match_alphanum(r)   == 0 else 0
-	case 's': return match_whitepace  (r)
-	case 'S': return utf8.rune_size(r) if match_whitepace(r) == 0 else 0
+	case 's': return match_whitespace  (r)
+	case 'S': return utf8.rune_size(r) if match_whitespace(r) == 0 else 0
 	case:     return utf8.rune_size(r) if r == meta               else 0
 	}
 }

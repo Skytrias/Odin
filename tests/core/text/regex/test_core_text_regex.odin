@@ -1,5 +1,6 @@
 package text_core_test_regex
 
+import "core:os"
 import "core:fmt"
 import "core:mem"
 import "core:text/regex"
@@ -33,9 +34,9 @@ Test_Entry :: struct {
 	err: regex.Error,
 }
 
-ASCII_Cases := [?]Test_Entry {
+ASCII_Simple_Cases := [?]Test_Entry {
 	// empty patter/haystack
-	{ "", "test", 0, 0, .No_Match },
+	{ "", "test", 0, 0, .Pattern_Empty },
 	{ "test", "", 0, 0, .No_Match },
 
 	// simple
@@ -95,9 +96,9 @@ ASCII_Cases := [?]Test_Entry {
 	{ "[^a]", "a", 0, 0, .No_Match },
 	{ "[^a]", "A", 0, 1, .OK },
 	{ "[^", "", 0, 0, .Pattern_Ended_Unexpectedly }, // check early ending
+}
 
-	//	meta characters
-	
+ASCII_Meta_Cases := [?]Test_Entry {
 	// begin
 	{ "^test", "test", 0, 4, .OK },
 	{ "test", "xtest", 1, 4, .OK },
@@ -117,20 +118,45 @@ ASCII_Cases := [?]Test_Entry {
 	{ "...", "abc", 0, 3, .OK },
 	{ ".y.", "xyz", 0, 3, .OK },
 
-	// start
-	{ "s*", "expression", 5, 2, .OK },
-	{ "s*", "expresion", 5, 1, .OK },
-	{ "s*", "expresion", 5, 1, .OK },
+	// star
+	{ "s*", "expression", 0, 0, .OK },
+	{ "s*", "expresion", 0, 0, .OK },
 	{ "es*", "expreion", 0, 1, .OK }, // .Star error previously
-	// { "es*", "expreion", 4, 1, .OK },
-	// { "es*", "expreion", 0, 1, .OK },
+	{ "es*", "xpreion", 3, 1, .OK },
+	{ "tes*", "tetest", 0, 2, .OK },
+
+	// plus 
+	{ "es+", "expression", 4, 3, .OK },
+	{ "es+", "expresion", 4, 2, .OK },
+	{ "es+", "expresssssssion", 4, 8, .OK },
+	{ "es+i", "expresssssssion", 4, 9, .OK },
+	{ "es+i", "expression", 4, 4, .OK },
+	{ "es+i", "expreion", 0, 0, .No_Match },
+
+	// question mark
+	{ "te?st", "test", 0, 4, .OK },
+	{ "te?st", "tst", 0, 3, .OK },
+	{ "te?s?t", "tt", 0, 2, .OK },
+	{ "t??t", "tt", 0, 0, .No_Match },
+
+	// branch
+	{ "|", "test", 0, 0, .Operation_Unsupported }
 }
 
 @test
-test_ascii_cases :: proc(t: ^testing.T) {
-	for entry in ASCII_Cases {
+test_ascii_simple_cases :: proc(t: ^testing.T) {
+	for entry in ASCII_Simple_Cases {
 		pos, length, err := regex.match_string_ascii(entry.pattern, entry.haystack)
-		fmt.eprintln(entry, pos, length, err)
+		expect(t, err == entry.err, "Regex: wrong error result")
+		expect(t, pos == entry.pos, "Regex: wrong entry position found")
+		expect(t, length == entry.length, "Regex: wrong entry length found")
+	}
+}
+
+@test
+test_ascii_meta_cases :: proc(t: ^testing.T) {
+	for entry in ASCII_Meta_Cases {
+		pos, length, err := regex.match_string_ascii(entry.pattern, entry.haystack)
 		expect(t, err == entry.err, "Regex: wrong error result")
 		expect(t, pos == entry.pos, "Regex: wrong entry position found")
 		expect(t, length == entry.length, "Regex: wrong entry length found")
@@ -145,7 +171,13 @@ main :: proc() {
 	context.allocator = mem.tracking_allocator(&track)
 
 	t: testing.T
-	test_ascii_cases(&t)
+	test_ascii_simple_cases(&t)
+	test_ascii_meta_cases(&t)
+
+	fmt.printf("%v/%v tests successful.\n", TEST_count - TEST_fail, TEST_count)
+	if TEST_fail > 0 {
+		os.exit(1)
+	}
 
 	if len(track.allocation_map) > 0 {
 		println()
