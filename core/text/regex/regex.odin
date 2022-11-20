@@ -97,12 +97,6 @@ Compiled :: union {
 	Compiled_UTF8,
 }
 
-Object_ASCII :: struct {
-	type:  Operator_Type, /* Char, Star, etc. */
-	c: u8,                /* The character itself. */
-	class: Slice,         /* OR a string with characters in a class */
-}
-
 // Compiled_ASCII :: struct {
 // 	// total
 // 	objects_total: [MAX_REGEXP_OBJECTS + 1]Object_ASCII, // Add 1 for the end-of-pattern sentinel

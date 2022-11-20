@@ -14,6 +14,18 @@ when false {
 	printf :: proc(f: string, v: ..any) {}
 }
 
+Object_ASCII :: struct {
+	type:  Operator_Type, /* Char, Star, etc. */
+	c: u8,                /* The character itself. */
+	class: Slice,         /* OR a string with characters in a class */
+}
+
+// options or stored class data we pass around
+Info_ASCII :: struct {
+	options: Options,
+	classes: []u8,
+}
+
 /* Definitions: */
 
 /*
@@ -212,17 +224,20 @@ compile_ascii :: proc(pattern: string) -> (
 	return
 }
 
-match_string_ascii :: proc(pattern, haystack: string, options := DEFAULT_OPTIONS) -> (position, length: int, err: Error) {
-	options := options | { .ASCII_Only }
+match_string_ascii :: proc(
+	pattern: string, 
+	haystack: string, 
+	options := DEFAULT_OPTIONS,
+) -> (position, length: int, err: Error) {
 	objects, classes := compile_ascii(pattern) or_return
-	return match_compiled_ascii(objects[:], classes[:], haystack, options)
+	info := Info_ASCII { options | { .ASCII_Only }, classes[:] }
+	return match_compiled_ascii(objects[:], haystack, info)
 }
 
 match_compiled_ascii :: proc(
 	pattern: []Object_ASCII, 
-	classes: []u8,
 	haystack: string, 
-	options := DEFAULT_OPTIONS,
+	info: Info_ASCII,
 ) -> (position, length: int, err: Error) {
 	haystack := haystack
 	buf      := transmute([]u8)haystack
@@ -231,12 +246,12 @@ match_compiled_ascii :: proc(
 	// Bail on empty pattern.
 	if len(pattern) != 0 {
 		if pattern[0].type == .Begin {
-			e := match_pattern_ascii(pattern[1:], classes, buf, &l, options)
+			e := match_pattern_ascii(pattern[1:], buf, &l, info)
 			return 0, l, e
 		} else {
 			for _, byte_idx in haystack {
 				l = 0
-				e := match_pattern_ascii(pattern, classes, buf[byte_idx:], &l, options)
+				e := match_pattern_ascii(pattern, buf[byte_idx:], &l, info)
 
 				// Either a match or an error, so return.
 				if e != .No_Match {
@@ -341,16 +356,15 @@ match_character_class_ascii :: proc(c: u8, class: []u8) -> (matched: bool) {
 @(private="package")
 match_one_ascii :: proc(
 	object: Object_ASCII,
-	classes: []u8, 
 	char: u8, 
-	options: Options,
+	info: Info_ASCII,
 ) -> (matched: bool) {
 	printf("[match 1] %c (%v)\n", char, object.type)
 	#partial switch object.type {
 	case .Sentinel:                return false
-	case .Dot:                     return  match_dot_ascii(char, .Dot_Matches_Newline in options)
-	case .Character_Class:         return  match_character_class_ascii(char, classes)
-	case .Inverse_Character_Class: return !match_character_class_ascii(char, classes)
+	case .Dot:                     return  match_dot_ascii(char, .Dot_Matches_Newline in info.options)
+	case .Character_Class:         return  match_character_class_ascii(char, info.classes)
+	case .Inverse_Character_Class: return !match_character_class_ascii(char, info.classes)
 	case .Digit:                   return  match_digit_ascii(char)
 	case .Not_Digit:               return !match_digit_ascii(char)
 	case .Alpha:                   return  match_alphanum_ascii(char)
@@ -365,22 +379,21 @@ match_one_ascii :: proc(
 match_star_ascii :: proc(
 	p: Object_ASCII,
 	pattern: []Object_ASCII, 
-	classes: []u8,
 	buf: []u8,
 	length: ^int, 
-	options: Options,
+	info: Info_ASCII,
 ) -> (err: Error) {
 	idx := 0
 	prelen := length^
 
-	for idx < len(buf) && match_one_ascii(p, classes, buf[idx], options) {
+	for idx < len(buf) && match_one_ascii(p, buf[idx], info) {
 		idx += 1
 		length^ += 1
 	}
 
 	// run till last character
 	for idx >= 0 {
-		if match_pattern_ascii(pattern, classes, buf[idx:], length, options) == .OK {
+		if match_pattern_ascii(pattern, buf[idx:], length, info) == .OK {
 			return .OK
 		}
 		idx -= 1
@@ -395,21 +408,20 @@ match_star_ascii :: proc(
 match_plus_ascii :: proc(
 	p: Object_ASCII,
 	pattern: []Object_ASCII,
-	classes: []u8,
 	buf: []u8, 
 	length: ^int, 
-	options: Options,
+	info: Info_ASCII,
 ) -> (err: Error) {
 	idx := 0
 
-	for idx < len(buf) && match_one_ascii(p, classes, buf[idx], options) {
+	for idx < len(buf) && match_one_ascii(p, buf[idx], info) {
 		idx += 1
 		length^ += 1
 	}
 
 	// run till first character
 	for idx > 0 {
-		if match_pattern_ascii(pattern, classes, buf[idx:], length, options) == .OK {
+		if match_pattern_ascii(pattern, buf[idx:], length, info) == .OK {
 			return .OK
 		}
 		idx -= 1
@@ -423,23 +435,22 @@ match_plus_ascii :: proc(
 match_question_ascii :: proc(
 	p: Object_ASCII,
 	pattern: []Object_ASCII, 
-	classes: []u8,
 	buf: []u8, 
 	length: ^int, 
-	options: Options,
+	info: Info_ASCII,
 ) -> (err: Error) {
 	if p.type == .Sentinel {
 		return .OK
 	}
 
-	if match_pattern_ascii(pattern, classes, buf, length, options) == .OK {
+	if match_pattern_ascii(pattern, buf, length, info) == .OK {
 		return .OK
 	}
 
 	// check first character
-	if len(buf) > 0 && match_one_ascii(p, classes, buf[0], options) {
+	if len(buf) > 0 && match_one_ascii(p, buf[0], info) {
 		// check upcoming content
-		if match_pattern_ascii(pattern, classes, buf[1:], length, options) == .OK {
+		if match_pattern_ascii(pattern, buf[1:], length, info) == .OK {
 			length^ += 1
 			return .OK
 		}
@@ -452,37 +463,35 @@ match_question_ascii :: proc(
 @(private="package")
 match_pattern_ascii :: proc(
 	pattern: []Object_ASCII, 
-	classes: []u8,
 	buf: []u8, 
 	length: ^int, 
-	options: Options,
+	info: Info_ASCII,
 ) -> (err: Error) {
-	pattern := pattern
-	buf     := buf
-	length_in := length^
-
+	// end early in case of empty pattern or buffer
 	if len(buf) == 0 || len(pattern) == 0 {
 		return .No_Match
 	}
 
+	pattern := pattern
+	buf     := buf
+	length_in := length^
 	printf("[match] %v\n", string(buf))
 
-	// always has to be higher than 0
 	for {
-		// TODO bounds checking anywhere?
-		p0 := pattern[0]
-		p1 := pattern[1]
+		// NOTE(Skytrias): simple bounds checking
+		p0 := len(pattern) > 0 ? pattern[0] : {}
+		p1 := len(pattern) > 1 ? pattern[1] : {}
 		
 		if p0.type == .Sentinel || p1.type == .Question_Mark {
 			c := 0 if len(buf) == 0 else buf[0]
 			printf("[match ?] char: %c | TYPES: %v & %v\n", c, p0.type, p1.type)
-			return match_question_ascii(p0, pattern[2:], classes, buf, length, options)
+			return match_question_ascii(p0, pattern[2:], buf, length, info)
 		} else if p1.type == .Star {
 			printf("[match *] char: %c\n", buf[0])
-			return match_star_ascii(p0, pattern[2:], classes, buf, length, options)
+			return match_star_ascii(p0, pattern[2:], buf, length, info)
 		} else if p1.type == .Plus {
 			printf("[match +] char: %c\n", buf[0])
-			return match_plus_ascii(p0, pattern[2:], classes, buf, length, options)
+			return match_plus_ascii(p0, pattern[2:], buf, length, info)
 		} else if p0.type == .End && p1.type == .Sentinel {
 			if len(buf) == 0 {
 				return .OK
@@ -497,9 +506,8 @@ match_pattern_ascii :: proc(
 			}
 		*/
 
-		c := len(buf) != 0 ? buf[0] : 0
-		
-		if !match_one_ascii(p0, classes, c, options) {
+		c := 0 if len(buf) == 0 else buf[0]
+		if !match_one_ascii(p0, c, info) {
 			break
 		} 
 
@@ -508,8 +516,8 @@ match_pattern_ascii :: proc(
 		pattern = pattern[1:]
 		printf("length: %v, len pattern %v\n", length^, len(pattern))
 	}
-
-  length^ = length_in
+	
+	length^ = length_in
 	return .No_Match
 }
 
