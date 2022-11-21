@@ -7,6 +7,7 @@
 */
 package regex
 
+import "core:mem"
 import "core:fmt"
 
 when false {
@@ -15,28 +16,62 @@ when false {
 	printf :: proc(f: string, v: ..any) {}
 }
 
-Object_ASCII :: struct {
-	type:  Operator_Type, /* Char, Star, etc. */
-	char: u8,                /* The character itself. */
-	class: Slice,         /* OR a string with characters in a class */
+// memory layout:
+// Operator_Type + upcoming dynamic data
+Regexp :: struct {
+	buffer: [dynamic]byte,
 }
 
-// options or stored class data we pass around
-Info_ASCII :: struct {
-	classes: []u8,
-	match_dot: proc(c: u8) -> bool,
+Regexp_Object_ASCII :: struct {
+	type: Operator_Type,
+	char: u8,
+	class: []u8, 
 }
+
+Regexp_Walk :: struct {
+	exp: ^Regexp,
+	temp: [dynamic]byte,
+
+	haystack: string,
+	length: int,
+}
+
+// Object_ASCII :: struct {
+// 	type:  Operator_Type, /* Char, Star, etc. */
+// 	char: u8,                /* The character itself. */
+// 	class: Slice,         /* OR a string with characters in a class */
+// }
+
+// // options or stored class data we pass around
+// Info_ASCII :: struct {
+// 	classes: []u8,
+// 	match_dot: proc(c: u8) -> bool,
+// }
 
 /* Definitions: */
 
 /*
 	Public procedures
 */
-compile_ascii :: proc(pattern: string) -> (
-	objects: [MAX_REGEXP_OBJECTS + 1]Object_ASCII, 
-	classes: [MAX_CHAR_CLASS_LEN]u8,
-	err: Error,
-) {
+compile_ascii :: proc(
+	regexp: ^Regexp,
+	pattern: string,
+) -> (err: Error) {
+	push_type :: #force_inline proc(buffer: ^[dynamic]byte, type: Operator_Type) {
+		append(buffer, transmute(u8) type)
+	}
+
+	push_type_char :: #force_inline proc(buffer: ^[dynamic]byte, c: u8) {
+		append(buffer, transmute(u8) Operator_Type.Char)
+		append(buffer, c)
+	}
+
+	push_length :: #force_inline proc(buffer: ^[dynamic]byte) -> (res: ^u16) {
+		res = &buffer[0]	
+		resize(buffer, len(buffer) + 2)
+		return
+	}
+
 	/*
 		The sizes of the two static arrays substantiate the static RAM usage of this package.
 		MAX_REGEXP_OBJECTS is the max number of symbols in the expression.
@@ -50,6 +85,10 @@ compile_ascii :: proc(pattern: string) -> (
 		return
 	}
 
+	// set & clear buffer
+	b := &regexp.buffer
+	clear(b)
+	
 	buf := transmute([]u8)pattern
 	ccl_buf_idx := u16(0)
 	j:         int  /* index into re_compiled    */
@@ -68,12 +107,12 @@ compile_ascii :: proc(pattern: string) -> (
 		/*
 			Meta-characters:
 		*/
-		case '^': objects[j].type = .Begin
-		case '$': objects[j].type = .End
-		case '.': objects[j].type = .Dot
-		case '*': objects[j].type = .Star
-		case '+': objects[j].type = .Plus
-		case '?': objects[j].type = .Question_Mark
+		case '^': push_type(b, .Begin)
+		case '$': push_type(b, .End)
+		case '.': push_type(b, .Dot)
+		case '*': push_type(b, .Star)
+		case '+': push_type(b, .Plus)
+		case '?': push_type(b, .Question_Mark)
 		case '|':
 			/*
 				Branch is currently bugged
@@ -101,18 +140,17 @@ compile_ascii :: proc(pattern: string) -> (
 			/*
 				Meta-character:
 			*/
-			case 'd': objects[j].type = .Digit
-			case 'D': objects[j].type = .Not_Digit
-			case 'w': objects[j].type = .Alpha
-			case 'W': objects[j].type = .Not_Alpha
-			case 's': objects[j].type = .Whitespace
-			case 'S': objects[j].type = .Not_Whitespace
+			case 'd': push_type(b, .Digit)
+			case 'D': push_type(b, .Not_Digit)
+			case 'w': push_type(b, .Alpha)
+			case 'W': push_type(b, .Not_Alpha)
+			case 's': push_type(b, .Whitespace)
+			case 'S': push_type(b, .Not_Whitespace)
 			case:
 				/*
 					Escaped character, e.g. `\`, '.' or '$'
 				*/
-				objects[j].type   = .Char
-				objects[j].char = char
+				push_type_char(b, char)
 			}
 
 		case '[':
@@ -135,14 +173,13 @@ compile_ascii :: proc(pattern: string) -> (
 			/*
 				Remember where the rune buffer starts in `.classes`.
 			*/
-			begin := ccl_buf_idx
 
 			switch char {
 			case '^':
 				/*
 					Set object type to inverse and eat `^`.
 				*/
-				objects[j].type = .Inverse_Character_Class
+				push_type(b, .Inverse_Character_Class)
 
 				if len(buf) <= 1 {
 					/* '^' as last char in pattern -> invalid regular expression. */
@@ -154,8 +191,10 @@ compile_ascii :: proc(pattern: string) -> (
 				char = buf[0]
 
 			case:
-				objects[j].type = .Character_Class
+				push_type(b, .Character_Class)
 			}
+
+			length := push_length(b)
 
 			/*
 				Copy characters inside `[...]` to buffer.
@@ -167,13 +206,8 @@ compile_ascii :: proc(pattern: string) -> (
 						return
 					}
 
-					if ccl_buf_idx >= MAX_CHAR_CLASS_LEN {
-						err = .Character_Class_Buffer_Too_Small
-						return
-					}
-
-					classes[ccl_buf_idx] = char
-					ccl_buf_idx += 1
+					append(b, char)
+					length^ += 1
 
 					if len(buf) <= 1 {
 						/* '\\' as last char in pattern -> invalid regular expression. */
@@ -186,16 +220,11 @@ compile_ascii :: proc(pattern: string) -> (
 				}
 
 				if char == ']' {
-					break;
+					break
 				}
 
-				if ccl_buf_idx >= MAX_CHAR_CLASS_LEN {
-					err = .Character_Class_Buffer_Too_Small
-					return
-				}
-
-				classes[ccl_buf_idx] = char
-				ccl_buf_idx += 1				
+				length^ += 1
+				append(b, char)
 
 				if len(buf) <= 1 {
 					/* pattern ended before ']' -> invalid regular expression. */
@@ -207,12 +236,9 @@ compile_ascii :: proc(pattern: string) -> (
 				char = buf[0]
 			}
 
-			objects[j].class = Slice{begin, ccl_buf_idx - begin}
-
 		case:
-			// Other characters:
-			objects[j].type   = .Char
-			objects[j].char = char
+			// Other characters
+			push_type_char(b, char)
 		}
 
 		// Advance pattern
@@ -221,49 +247,78 @@ compile_ascii :: proc(pattern: string) -> (
 	}
 
 	// Finish pattern with a Sentinel
-	objects[j].type = .Sentinel
+	push_type(b, .Sentinel)
 	return
 }
 
-info_init_ascii :: proc(
-	classes: []u8, 
-	options: Options,
-) -> Info_ASCII {
-	return {
-		classes,
-		(.Dot_Matches_Newline in options) ? __match_dot_ascii_match_newline : __match_dot_ascii,
-	}
-}
+// info_init_ascii :: proc(
+// 	classes: []u8, 
+// 	options: Options,
+// ) -> Info_ASCII {
+// 	return {
+// 		classes,
+// 		(.Dot_Matches_Newline in options) ? __match_dot_ascii_match_newline : __match_dot_ascii,
+// 	}
+// }
 
 match_string_ascii :: proc(
 	pattern: string, 
 	haystack: string, 
 	options := DEFAULT_OPTIONS,
 ) -> (match: Match, err: Error) {
-	objects, classes := compile_ascii(pattern) or_return
-	info := info_init_ascii(classes[:], options)
-	return match_compiled_ascii(objects[:], haystack, info)
+	regexp := Regexp {
+		buffer = make([dynamic]byte, 0, mem.Kilobyte * 1),
+	}
+	compile_ascii(&regexp, pattern) or_return
+	walk := Regexp_Walk {
+		exp = &regexp,
+	}
+	return match_compiled_ascii(&walk)
 }
 
-match_compiled_ascii :: proc(
-	pattern: []Object_ASCII, 
-	haystack: string, 
-	info: Info_ASCII,
-) -> (match: Match, err: Error) {
-	haystack := haystack
-	buf      := transmute([]u8)haystack
-	l := int(0)
+walk_obj_ascii :: proc(walk: ^Regexp_Walk) -> (
+	res: Regexp_Object_ASCII,
+	size: int,
+) {
+	res.type = transmute(Operator_Type) walk.temp[0]
+	size = 1
+
+	#partial switch res.type {
+		case .Char: {
+			res.char = walk.temp[1]
+			size = 2
+		}
+
+		case .Character_Class, .Inverse_Character_Class: {
+			unimplemented("yo gotta do this")
+		}
+	}
+
+	return
+}
+
+walk_advance :: proc(walk: ^Regexp_Walk) {
+	// TODO optimize
+	_, size := walk_obj_ascii(walk)
+	walk.temp = walk.temp[size:]
+}
+
+match_compiled_ascii :: proc(walk: ^Regexp_Walk) -> (match: Match, err: Error) {
+	start, size := walk_obj_ascii(walk)
 
 	// Bail on empty pattern.
-	if pattern[0].type != .Sentinel {
-		if pattern[0].type == .Begin {
-			err = match_pattern_ascii(pattern[1:], buf, &l, info)
-			match = { 0, 0, l }
+	if start.type != .Sentinel {
+		if start.type == .Begin {
+			walk_advance(walk)
+			err = match_pattern_ascii(walk)
+			match = { 0, 0, walk.length }
 			return
 		} else {
+			buf := transmute([]u8) walk.haystack
+			
 			for _, byte_idx in haystack {
 				l = 0
-				e := match_pattern_ascii(pattern, buf[byte_idx:], &l, info)
+				e := match_pattern_ascii(pattern, buf[byte_idx:], &l)
 
 				// Either a match or an error, so return.
 				if e != .No_Match {
@@ -375,16 +430,15 @@ match_character_class_ascii :: proc(c: u8, class: []u8) -> bool {
 
 @(private="package")
 match_one_ascii :: proc(
-	object: Object_ASCII,
-	char: u8, 
-	info: Info_ASCII,
+	object: Regexp_Object,
+	char: u8,
 ) -> bool {
 	printf("[match 1] %c (%v)\n", char, object.type)
 	#partial switch object.type {
 	case .Sentinel:                return false
-	case .Dot:                     return  info.match_dot(char)
-	case .Character_Class:         return  match_character_class_ascii(char, info.classes)
-	case .Inverse_Character_Class: return !match_character_class_ascii(char, info.classes)
+	// case .Dot:                     return  info.match_dot(char)
+	case .Character_Class:         return  match_character_class_ascii(char, object.class)
+	case .Inverse_Character_Class: return !match_character_class_ascii(char, object.class)
 	case .Digit:                   return  match_digit_ascii(char)
 	case .Not_Digit:               return !match_digit_ascii(char)
 	case .Alpha:                   return  match_alphanum_ascii(char)
@@ -395,82 +449,80 @@ match_one_ascii :: proc(
 	}
 }
 
-@(private="package")
-match_star_ascii :: proc(
-	p: Object_ASCII,
-	pattern: []Object_ASCII, 
-	buf: []u8,
-	length: ^int, 
-	info: Info_ASCII,
-) -> (err: Error) {
-	idx := 0
-	prelen := length^
+// @(private="package")
+// match_star_ascii :: proc(
+// 	p: Object_ASCII,
+// 	pattern: []Object_ASCII, 
+// 	buf: []u8,
+// 	length: ^int, 
+// 	info: Info_ASCII,
+// ) -> (err: Error) {
+// 	idx := 0
+// 	prelen := length^
 
-	for idx < len(buf) && match_one_ascii(p, buf[idx], info) {
-		idx += 1
-		length^ += 1
-	}
+// 	for idx < len(buf) && match_one_ascii(p, buf[idx], info) {
+// 		idx += 1
+// 		length^ += 1
+// 	}
 
-	// run till last character
-	for idx >= 0 {
-		if match_pattern_ascii(pattern, buf[idx:], length, info) == .OK {
-			return .OK
-		}
-		idx -= 1
-		length^ -= 1
-	}
+// 	// run till last character
+// 	for idx >= 0 {
+// 		if match_pattern_ascii(pattern, buf[idx:], length, info) == .OK {
+// 			return .OK
+// 		}
+// 		idx -= 1
+// 		length^ -= 1
+// 	}
 
-	length^ = prelen
-	return .No_Match
-}
+// 	length^ = prelen
+// 	return .No_Match
+// }
 
-@(private="package")
-match_plus_ascii :: proc(
-	p: Object_ASCII,
-	pattern: []Object_ASCII,
-	buf: []u8, 
-	length: ^int, 
-	info: Info_ASCII,
-) -> (err: Error) {
-	idx := 0
+// @(private="package")
+// match_plus_ascii :: proc(
+// 	p: Object_ASCII,
+// 	pattern: []Object_ASCII,
+// 	buf: []u8, 
+// 	length: ^int, 
+// ) -> (err: Error) {
+// 	idx := 0
 
-	for idx < len(buf) && match_one_ascii(p, buf[idx], info) {
-		idx += 1
-		length^ += 1
-	}
+// 	for idx < len(buf) && match_one_ascii(p, buf[idx], info) {
+// 		idx += 1
+// 		length^ += 1
+// 	}
 
-	// run till first character
-	for idx > 0 {
-		if match_pattern_ascii(pattern, buf[idx:], length, info) == .OK {
-			return .OK
-		}
-		idx -= 1
-		length^ -= 1
-	}
+// 	// run till first character
+// 	for idx > 0 {
+// 		if match_pattern_ascii(pattern, buf[idx:], length, info) == .OK {
+// 			return .OK
+// 		}
+// 		idx -= 1
+// 		length^ -= 1
+// 	}
 
-	return .No_Match
-}
+// 	return .No_Match
+// }
 
 @(private="package")
 match_question_ascii :: proc(
-	p: Object_ASCII,
-	pattern: []Object_ASCII, 
+	regexp: ^Regexp,
+	p: Regexp_Object,
 	buf: []u8, 
 	length: ^int, 
-	info: Info_ASCII,
 ) -> (err: Error) {
 	if p.type == .Sentinel {
 		return .OK
 	}
 
-	if match_pattern_ascii(pattern, buf, length, info) == .OK {
+	if match_pattern_ascii(regexp, buf, length) == .OK {
 		return .OK
 	}
 
 	// check first character
-	if len(buf) > 0 && match_one_ascii(p, buf[0], info) {
+	if len(buf) > 0 && match_one_ascii(p, buf[0]) {
 		// check upcoming content
-		if match_pattern_ascii(pattern, buf[1:], length, info) == .OK {
+		if match_pattern_ascii(regexp, buf[1:], length) == .OK {
 			length^ += 1
 			return .OK
 		}
@@ -482,10 +534,9 @@ match_question_ascii :: proc(
 /* Iterative matching */
 @(private="package")
 match_pattern_ascii :: proc(
-	pattern: []Object_ASCII, 
+	regexp: ^Regexp,
 	buf: []u8, 
 	length: ^int, 
-	info: Info_ASCII,
 ) -> (err: Error) {
 	// end early in case of empty pattern or buffer
 	if len(buf) == 0 || len(pattern) == 0 {
@@ -519,13 +570,6 @@ match_pattern_ascii :: proc(
 			return .No_Match
 		}
 
-		/*  Branching is not working properly
-			else if (p1.type == BRANCH)
-			{
-			  return (matchpattern(pattern, text) || matchpattern(&pattern[2], text));
-			}
-		*/
-
 		c := 0 if len(buf) == 0 else buf[0]
 		if !match_one_ascii(p0, c, info) {
 			break
@@ -541,20 +585,20 @@ match_pattern_ascii :: proc(
 	return .No_Match
 }
 
-print_ascii :: proc(pattern: []Object_ASCII, classes: []u8) {
-	for o in pattern {
-		if o.type == .Sentinel {
-			break
-		} else if o.type == .Character_Class || o.type == .Inverse_Character_Class {
-			fmt.printf("type: %v[ ", o.type)
-			for i := o.class.start_idx; i < o.class.start_idx + o.class.length; i += 1 {
-				fmt.printf("%c, ", classes[i])
-			}
-			fmt.printf("]\n")
-		} else if o.type == .Char {
-			fmt.printf("type: %v{{'%c'}}\n", o.type, o.char)
-		} else {
-			fmt.printf("type: %v\n", o.type)
-		}
-	}
-}
+// print_ascii :: proc(pattern: []Object_ASCII, classes: []u8) {
+// 	for o in pattern {
+// 		if o.type == .Sentinel {
+// 			break
+// 		} else if o.type == .Character_Class || o.type == .Inverse_Character_Class {
+// 			fmt.printf("type: %v[ ", o.type)
+// 			for i := o.class.start_idx; i < o.class.start_idx + o.class.length; i += 1 {
+// 				fmt.printf("%c, ", classes[i])
+// 			}
+// 			fmt.printf("]\n")
+// 		} else if o.type == .Char {
+// 			fmt.printf("type: %v{{'%c'}}\n", o.type, o.char)
+// 		} else {
+// 			fmt.printf("type: %v\n", o.type)
+// 		}
+// 	}
+// }

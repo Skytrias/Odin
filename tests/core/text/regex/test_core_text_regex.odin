@@ -295,10 +295,10 @@ main :: proc() {
 
 	t: testing.T
 	test_ascii_simple_cases(&t)
-	test_ascii_meta_cases(&t)
-	test_utf8_simple_cases(&t)
-	test_utf8_meta_cases(&t)
-	test_utf8_specific_cases(&t)
+	// test_ascii_meta_cases(&t)
+	// test_utf8_simple_cases(&t)
+	// test_utf8_meta_cases(&t)
+	// test_utf8_specific_cases(&t)
 	// test_utf8_temp_cases(&t)
 
 	fmt.printf("%v/%v tests successful.\n", TEST_count - TEST_fail, TEST_count)
