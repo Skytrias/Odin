@@ -237,10 +237,7 @@ info_init_ascii :: proc(
 	return {
 		classes,
 		{
-			// (.ASCII_Alpha_Match in options) ? __match_alpha_utf8_through_ascii : __match_alpha_utf8,
-			// (.ASCII_Digit_Match in options) ? __match_digit_utf8_through_ascii : __match_digit_utf8,
-			// (.ASCII_Whitespace_Match in options) ? __match_whitespace_utf8_through_ascii : __match_whitespace_utf8,
-			// (.Dot_Matches_Newline in options) ? __match_dot_utf8_match_newline : __match_dot_utf8,
+			(.Dot_Matches_Newline in options) ? __match_dot_ascii_match_newline : __match_dot_ascii,
 		},
 	}
 }

@@ -294,8 +294,8 @@ main :: proc() {
 	context.allocator = mem.tracking_allocator(&track)
 
 	t: testing.T
-	// test_ascii_simple_cases(&t)
-	// test_ascii_meta_cases(&t)
+	test_ascii_simple_cases(&t)
+	test_ascii_meta_cases(&t)
 	test_utf8_simple_cases(&t)
 	test_utf8_meta_cases(&t)
 	test_utf8_specific_cases(&t)
