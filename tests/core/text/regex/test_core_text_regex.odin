@@ -54,6 +54,7 @@ ASCII_Simple_Cases := [?]Test_Entry {
 	{ "1", "1", { 0, 0, 1 }, .OK },
 	
 	// character classes
+	{ "[Ss]imple", "Simple", { 0, 0, 6 }, .OK },
 	{ "[Hh]ello [Ww]orld", "Hello World", { 0, 0, 11 }, .OK },
 	{ "[Hh]ello [Ww]orld", "Hello world", { 0, 0, 11 }, .OK },
 	{ "[Hh]ello [Ww]orld", "hello world", { 0, 0, 11 }, .OK },
@@ -64,7 +65,7 @@ ASCII_Simple_Cases := [?]Test_Entry {
 
 	// character class ranges
 	{ "[abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN]", "x", { 0, 0, 1 }, .OK },
-	{ "[abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO]", "x", {}, .Character_Class_Buffer_Too_Small },
+	// { "[abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO]", "x", {}, .Character_Class_Buffer_Too_Small },
 
 	// escaped chars
 	{ "\\", "\\", {}, .Pattern_Ended_Unexpectedly },
@@ -149,7 +150,7 @@ ASCII_Meta_Cases := [?]Test_Entry {
 	{ "t??t", "tt", {}, .No_Match },
 
 	// branch
-	{ "|", "test", {}, .Operation_Unsupported }
+	{ "|", "test", {}, .Operation_Unsupported },
 }
 
 // NOTE(Skytrias): should be checked for all object.type variants
@@ -241,6 +242,7 @@ test_check_match_entry :: proc(
 @test
 test_ascii_simple_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Simple_Cases {
+		fmt.eprintln("~~~~~~~~~~~~~~~~~~")
 		match, err := regex.match_string_ascii(entry.pattern, entry.haystack)
 		test_check_match_entry(t, entry, match, err)
 	}
@@ -249,6 +251,7 @@ test_ascii_simple_cases :: proc(t: ^testing.T) {
 @test
 test_ascii_meta_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Meta_Cases {
+		fmt.eprintln("~~~~~~~~~~~~~~~~~~")
 		match, err := regex.match_string_ascii(entry.pattern, entry.haystack)
 		test_check_match_entry(t, entry, match, err)
 	}
@@ -295,7 +298,7 @@ main :: proc() {
 
 	t: testing.T
 	test_ascii_simple_cases(&t)
-	// test_ascii_meta_cases(&t)
+	test_ascii_meta_cases(&t)
 	// test_utf8_simple_cases(&t)
 	// test_utf8_meta_cases(&t)
 	// test_utf8_specific_cases(&t)

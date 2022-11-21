@@ -7,6 +7,7 @@
 */
 package regex
 
+import "core:mem"
 import "core:fmt"
 
 /*
@@ -112,9 +113,13 @@ match_string :: proc(
 	options := DEFAULT_OPTIONS,
 ) -> (match: Match, err: Error) {
 	if .ASCII_Only in options {
-		objects, classes := compile_ascii(pattern) or_return
-		info := info_init_ascii(classes[:], options)
-		return match_compiled_ascii(objects[:], haystack, info)
+		regexp := Regexp {
+			buffer = make([dynamic]byte, 0, mem.Kilobyte * 1),
+		}
+
+		compile_ascii(&regexp, pattern) or_return
+		walk := walk_init(&regexp, haystack)
+		return match_compiled_ascii(&walk)
 	} else {
 		objects, classes := compile_utf8(pattern) or_return
 		info := info_init_utf8(classes[:], options)
