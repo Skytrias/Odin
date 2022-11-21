@@ -40,17 +40,18 @@ MAX_CHAR_CLASS_LEN :: #config(REGEX_MAX_CHAR_CLASS_LEN, 40) /* Max length of cha
 DEFAULT_OPTIONS    :: Options {}
 
 Option :: enum u8 {
-	Dot_Matches_Newline,      /* `.` should match newline as well                                              */
-	Case_Insensitive,         /* Case-insensitive match, e.g. [a] matches [aA], can work with Unicode options  */
+	Dot_Matches_Newline,    /* `.` should match newline as well                                              */
+	Case_Insensitive,       /* Case-insensitive match, e.g. [a] matches [aA], can work with Unicode options  */
 
-	ASCII_Only,               /* Accept ASCII haystacks and patterns only to speed things up                   */
-
-	Unicode_Alpha_Match,      /* `\w` uses `core:unicode` to determine if rune is a letter                     */
-	Unicode_Digit_Match,      /* `\d` uses `core:unicode` to determine if rune is a digit                      */
-	Unicode_Whitespace_Match, /* `\s` uses `core:unicode` to determine if rune is whitespace                   */
+	ASCII_Only,             /* Accept ASCII haystacks and patterns only to speed things up                   */
+	ASCII_Alpha_Match,      /* `\w` uses `core:unicode` to determine if rune is a letter                     */
+	ASCII_Digit_Match,      /* `\d` uses `core:unicode` to determine if rune is a digit                      */
+	ASCII_Whitespace_Match, /* `\s` uses `core:unicode` to determine if rune is whitespace                   */
 }
 Options :: bit_set[Option; u8]
 
+// All possible errors that can occur when compiling regex patterns
+// and while searching for matches
 Error :: enum u8 {
 	OK = 0,
 	No_Match,
@@ -83,70 +84,43 @@ Operator_Type :: enum u8 {
 	Not_Alpha,
 	Whitespace,
 	Not_Whitespace,
-	Branch,
+	Branch, // TODO support branching
 }
 
+// Small sized slice to view into class data
 Slice :: struct {
 	start_idx: u16,
 	length:    u16,
 }
 
+// Match of a regex pattern match
 Match :: struct {
+	// position of the match in bytes
 	byte_offset: int,
+	
+	// position of the match in characters
 	char_offset: int,
+	
+	// length of the match in characters
 	length: int,
 }
 
-// Compiled :: union {
-// 	// Compiled_ASCII,
-// 	Compiled_UTF8,
-// }
-
-// Compiled_ASCII :: struct {
-// 	// total
-// 	objects_total: [MAX_REGEXP_OBJECTS + 1]Object_ASCII, // Add 1 for the end-of-pattern sentinel
-// 	// movable range
-// 	objects: []Object_ASCII,
-// 	// local stored data
-// 	classes: [MAX_CHAR_CLASS_LEN]u8,
-// }
-
-// /*
-// 	Public procedures
-// */
-// compile :: proc(pattern: string, options := DEFAULT_OPTIONS) -> (compiled: Compiled, err: Error) {
-// 	if .ASCII_Only in options {
-// 		return compile_ascii(pattern)
-// 	} else {
-// 		return compile_utf8(pattern)
-// 	}
-// }
-
-// match_string :: proc(pattern, haystack: string, options := DEFAULT_OPTIONS) -> (position, length: int, err: Error) {
-// 	compiled := compile(pattern) or_return
-
-// 	return match_compiled(compiled, haystack, options)
-// }
-
-// match_compiled :: proc(pattern: $T, haystack: string, options := DEFAULT_OPTIONS) -> (position, length: int, err: Error) {
-// 	when T == Compiled_UTF8 {
-// 		return match_compiled_utf8(pattern, haystack, options)
-// 	} else when T == Compiled_ASCII {
-// 		return match_compiled_ascii(pattern, haystack, options)
-// 	} else {
-// 		if p, ok := pattern.(Compiled_UTF8); ok {
-// 			return match_compiled_utf8(p, haystack, options)
-// 		} else if p, ok := pattern.(Compiled_ASCII); ok {
-// 			return match_compiled_ascii(p, haystack, options)
-// 		} else {
-// 			unreachable()		
-// 		}
-// 	}
-// }
-
-// match       :: proc { match_string,       match_compiled       }
-// match_utf8  :: proc { match_string_utf8,  match_compiled_utf8  }
-// match_ascii :: proc { match_string_ascii, match_compiled_ascii }
+// match a string based on the wanted options
+match_string :: proc(
+	pattern: string, 
+	haystack: string, 
+	options := DEFAULT_OPTIONS,
+) -> (match: Match, err: Error) {
+	if .ASCII_Only in options {
+		objects, classes := compile_ascii(pattern) or_return
+		info := info_init_ascii(classes[:], options)
+		return match_compiled_ascii(objects[:], haystack, info)
+	} else {
+		objects, classes := compile_utf8(pattern) or_return
+		info := info_init_utf8(classes[:], options)
+		return match_compiled_utf8(objects[:], haystack, info)
+	}
+}
 
 print :: proc(pattern: $T) {
 	when T == Compiled_UTF8 {
@@ -163,24 +137,3 @@ print :: proc(pattern: $T) {
 		}
 	}
 }
-
-/*
-	Private functions
-*/
-
-match_digit           :: proc { match_digit_ascii,           match_digit_utf8           }
-match_alpha           :: proc { match_alpha_ascii,           match_alpha_utf8           }
-match_whitespace       :: proc { match_whitespace_ascii,      match_whitespace_utf8      }
-match_alphanum        :: proc { match_alphanum_ascii,        match_alphanum_utf8        }
-match_range           :: proc { match_range_ascii,           match_range_utf8           }
-match_dot             :: proc { match_dot_ascii,             match_dot_utf8             }
-is_meta_character     :: proc { is_meta_character_ascii,     is_meta_character_utf8     }
-match_meta_character  :: proc { match_meta_character_ascii,  match_meta_character_utf8  }
-match_character_class :: proc { match_character_class_ascii, match_character_class_utf8 }
-
-match_one             :: proc { match_one_ascii,             match_one_utf8             }
-match_star            :: proc { match_star_ascii,            match_star_utf8            }
-match_plus            :: proc { match_plus_ascii,            match_plus_utf8            }
-match_question        :: proc { match_question_ascii,        match_question_utf8        }
-
-match_pattern         :: proc { match_pattern_ascii,         match_pattern_utf8         }

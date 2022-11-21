@@ -23,8 +23,13 @@ Object_ASCII :: struct {
 
 // options or stored class data we pass around
 Info_ASCII :: struct {
-	options: Options,
 	classes: []u8,
+	vtable: Vtable,
+}
+
+// table that has calls set based on options
+Vtable :: struct {
+	match_dot: proc(c: u8) -> bool,
 }
 
 /* Definitions: */
@@ -225,13 +230,28 @@ compile_ascii :: proc(pattern: string) -> (
 	return
 }
 
+info_init_ascii :: proc(
+	classes: []u8, 
+	options: Options,
+) -> Info_ASCII {
+	return {
+		classes,
+		{
+			// (.ASCII_Alpha_Match in options) ? __match_alpha_utf8_through_ascii : __match_alpha_utf8,
+			// (.ASCII_Digit_Match in options) ? __match_digit_utf8_through_ascii : __match_digit_utf8,
+			// (.ASCII_Whitespace_Match in options) ? __match_whitespace_utf8_through_ascii : __match_whitespace_utf8,
+			// (.Dot_Matches_Newline in options) ? __match_dot_utf8_match_newline : __match_dot_utf8,
+		},
+	}
+}
+
 match_string_ascii :: proc(
 	pattern: string, 
 	haystack: string, 
 	options := DEFAULT_OPTIONS,
 ) -> (match: Match, err: Error) {
 	objects, classes := compile_ascii(pattern) or_return
-	info := Info_ASCII { options | { .ASCII_Only }, classes[:] }
+	info := info_init_ascii(classes[:], options)
 	return match_compiled_ascii(objects[:], haystack, info)
 }
 
@@ -305,8 +325,12 @@ match_range_ascii :: proc(c: u8, range: []u8) -> bool {
 }
 
 @(private="package")
-match_dot_ascii :: proc(c: u8, match_newline: bool) -> bool {
-	return match_newline || (c != '\n' && c != '\r')
+__match_dot_ascii :: proc(c: u8) -> bool {
+	return c != '\n' && c != '\r'
+}
+
+__match_dot_ascii_match_newline :: proc(c: u8) -> bool {
+	return true
 }
 
 @(private="package")
@@ -368,7 +392,7 @@ match_one_ascii :: proc(
 	printf("[match 1] %c (%v)\n", char, object.type)
 	#partial switch object.type {
 	case .Sentinel:                return false
-	case .Dot:                     return  match_dot_ascii(char, .Dot_Matches_Newline in info.options)
+	case .Dot:                     return  info.vtable.match_dot(char)
 	case .Character_Class:         return  match_character_class_ascii(char, info.classes)
 	case .Inverse_Character_Class: return !match_character_class_ascii(char, info.classes)
 	case .Digit:                   return  match_digit_ascii(char)

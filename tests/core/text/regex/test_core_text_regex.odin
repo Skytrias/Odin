@@ -60,7 +60,11 @@ ASCII_Simple_Cases := [?]Test_Entry {
 	{ "[Hh]ello [Ww]orld", "hello World", { 0, 0, 11 }, .OK },
 	{ "[aabc", "a", {}, .Pattern_Ended_Unexpectedly }, // check early ending
 	{ "[", "a", {}, .Pattern_Ended_Unexpectedly }, // check early ending
-	{ "[\\\\]", "\\", { 0, 0, 1 }, .OK }, // check early ending
+	{ "[\\\\]", "\\", { 0, 0, 1 }, .OK },
+
+	// character class ranges
+	{ "[abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN]", "x", { 0, 0, 1 }, .OK },
+	{ "[abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO]", "x", {}, .Character_Class_Buffer_Too_Small },
 
 	// escaped chars
 	{ "\\", "\\", {}, .Pattern_Ended_Unexpectedly },
@@ -191,6 +195,7 @@ UTF8_Specific_Cases := [?]Test_Entry {
 	{ "[Öö]", "Whatö", { 4, 4, 1 }, .OK },
 	{ "[Öö]", "What ", {}, .No_Match },
 	{ "[Öö ]", "What ", { 4, 4, 1 }, .OK },
+	{ "[", "", {}, .Pattern_Ended_Unexpectedly },
 
 	// meta
 	
@@ -289,8 +294,8 @@ main :: proc() {
 	context.allocator = mem.tracking_allocator(&track)
 
 	t: testing.T
-	test_ascii_simple_cases(&t)
-	test_ascii_meta_cases(&t)
+	// test_ascii_simple_cases(&t)
+	// test_ascii_meta_cases(&t)
 	test_utf8_simple_cases(&t)
 	test_utf8_meta_cases(&t)
 	test_utf8_specific_cases(&t)

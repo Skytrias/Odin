@@ -18,8 +18,15 @@ Object_UTF8 :: struct {
 }
 
 Info_UTF8 :: struct {
-	options: Options,
 	classes: []rune,
+	vtable: Vtable_UTF8,
+}
+
+Vtable_UTF8 :: struct {
+	match_alpha: proc(r: rune) -> bool,
+	match_digit: proc(r: rune) -> bool,
+	match_whitespace: proc(r: rune) -> bool,
+	match_dot: proc(r: rune) -> bool,
 }
 
 /*
@@ -240,17 +247,33 @@ compile_utf8 :: proc(pattern: string) -> (
 	return
 }
 
+info_init_utf8 :: proc(
+	classes: []rune, 
+	options: Options,
+) -> Info_UTF8 {
+	return {
+		classes,
+		{
+			(.ASCII_Alpha_Match in options) ? __match_alpha_utf8_through_ascii : __match_alpha_utf8,
+			(.ASCII_Digit_Match in options) ? __match_digit_utf8_through_ascii : __match_digit_utf8,
+			(.ASCII_Whitespace_Match in options) ? __match_whitespace_utf8_through_ascii : __match_whitespace_utf8,
+			(.Dot_Matches_Newline in options) ? __match_dot_utf8_match_newline : __match_dot_utf8,
+		},
+	}
+}
+
 match_string_utf8 :: proc(
 	pattern: string, 
 	haystack: string, 
 	options := DEFAULT_OPTIONS,
 ) -> (match: Match, err: Error) {
 	if .ASCII_Only in options {
-		return {}, .Incompatible_Option
+		err = .Incompatible_Option
+		return
 	}
 	
 	objects, classes := compile_utf8(pattern) or_return
-	info := Info_UTF8 { options, classes[:] }
+	info := info_init_utf8(classes[:], options)
 	return match_compiled_utf8(objects[:], haystack, info)
 }
 
@@ -302,28 +325,51 @@ match_compiled_utf8 :: proc(
 	Private functions:
 */
 @(private="package")
-match_digit_utf8 :: proc(r: rune) -> (match_size: int) {
-	return utf8.rune_size(r) if unicode.is_number(r) else 0
+__match_digit_utf8 :: proc(r: rune) -> bool {
+	return unicode.is_number(r)
 }
 
 @(private="package")
-match_alpha_utf8 :: proc(r: rune) -> (match_size: int) {
-	return utf8.rune_size(r) if unicode.is_alpha(r) else 0
+__match_digit_utf8_through_ascii :: proc(r: rune) -> bool {
+	return '0' <= r && r <= '9'
 }
 
 @(private="package")
-match_whitespace_utf8 :: proc(r: rune) -> (match_size: int) {
-	return utf8.rune_size(r) if unicode.is_space(r) else 0
+__match_alpha_utf8 :: proc(r: rune) -> bool {
+	return unicode.is_alpha(r)
 }
 
 @(private="package")
-match_alphanum_utf8 :: proc(r: rune) -> (match_size: int) {
-	if r == '_' {
-		return 1
+__match_alpha_utf8_through_ascii :: proc(r: rune) -> bool {
+	return ('A' <= r && r <= 'Z') || ('a' <= r && r <= 'z')
+}
+
+@(private="package")
+__match_whitespace_utf8 :: proc(r: rune) -> bool {
+	return unicode.is_space(r)
+}
+
+@(private="package")
+__match_whitespace_utf8_through_ascii :: proc(r: rune) -> bool {
+	switch r {
+	case '\t', '\n', '\v', '\f', '\r', ' ', 0x85, 0xa0: return true
+	case:                                               return false
 	}
+}
 
-	alpha := match_alpha_utf8(r)
-	return alpha if alpha != 0 else match_digit_utf8(r)
+@(private="package")
+__match_dot_utf8 :: proc(r: rune) -> bool {
+	return r != '\n' && r != '\r'
+}
+
+@(private="package")
+__match_dot_utf8_match_newline :: proc(r: rune) -> bool {
+	return utf8.rune_size(r) > 0 
+}
+
+@(private="package")
+match_alphanum_utf8 :: proc(r: rune, info: Info_UTF8) -> bool {
+	return r == '_' || info.vtable.match_alpha(r) || info.vtable.match_digit(r)
 }
 
 @(private="package")
@@ -336,35 +382,33 @@ match_range_utf8 :: proc(r: rune, range: []rune) -> bool {
 }
 
 @(private="package")
-match_dot_utf8 :: proc(r: rune, match_newline: bool) -> (match_size: int) {
-	if match_newline {
-		return utf8.rune_size(r)
-	} else {
-		return 1 if r != '\n' && r != '\r' else 0
-	}
-}
-
-@(private="package")
 is_meta_character_utf8 :: proc(r: rune) -> (match_size: int) {
 	return 1 if (r == 's') || (r == 'S') || (r == 'w') || (r == 'W') || (r == 'd') || (r == 'D') else 0
 }
 
 @(private="package")
-match_meta_character_utf8 :: proc(r: rune, meta: rune) -> (match_size: int) {
+match_meta_character_utf8 :: proc(
+	r: rune, 
+	meta: rune,
+	info: Info_UTF8,
+) -> bool {
 	switch meta {
-	case 'd': return match_digit       (r)
-	case 'D': return utf8.rune_size(r) if match_digit(r)      == 0 else 0
-	case 'w': return match_alphanum    (r)
-	case 'W': return utf8.rune_size(r) if match_alphanum(r)   == 0 else 0
-	case 's': return match_whitespace  (r)
-	case 'S': return utf8.rune_size(r) if match_whitespace(r) == 0 else 0
-	case:     return utf8.rune_size(r) if r == meta               else 0
+	case 'd': return info.vtable.match_digit(r)
+	case 'D': return !info.vtable.match_digit(r)
+	case 'w': return match_alphanum_utf8(r, info)
+	case 'W': return !match_alphanum_utf8(r, info)
+	case 's': return info.vtable.match_whitespace(r)
+	case 'S': return !info.vtable.match_whitespace(r)
+	case:     return r == meta
 	}
 }
 
 @(private="package")
-match_character_class_utf8 :: proc(r: rune, class: []rune) -> bool {
-	class := class
+match_character_class_utf8 :: proc(
+	r: rune, 
+	info: Info_UTF8,
+) -> bool {
+	class := info.classes
 
 	for len(class) > 0 {
 		if match_range_utf8(r, class) {
@@ -376,7 +420,7 @@ match_character_class_utf8 :: proc(r: rune, class: []rune) -> bool {
 				return false
 			}
 
-			if match_meta_character_utf8(r, class[0]) > 0 {
+			if match_meta_character_utf8(r, class[0], info) {
 				return true
 			} else if r == class[0] && is_meta_character_utf8(r) > 0 {
 				return true
@@ -407,23 +451,23 @@ match_one_utf8 :: proc(
 	case .Sentinel:
 		return false
 	case .Dot:
-		return match_dot_utf8(r, .Dot_Matches_Newline in info.options) > 0
+		return info.vtable.match_dot(r)
 	case .Character_Class:
-		return match_character_class_utf8(r, info.classes)
+		return match_character_class_utf8(r, info)
 	case .Inverse_Character_Class: 
-		return !match_character_class_utf8(r, info.classes)
+		return !match_character_class_utf8(r, info)
 	case .Digit:
-		return match_digit_utf8(r) > 0
+		return info.vtable.match_digit(r)
 	case .Not_Digit:
-		return !(match_digit_utf8(r) > 0)
+		return !info.vtable.match_digit(r)
 	case .Alpha:
-		return  match_alphanum_utf8(r) > 0
+		return  match_alphanum_utf8(r, info)
 	case .Not_Alpha:
-		return !(match_alphanum_utf8(r) > 0)
+		return !match_alphanum_utf8(r, info)
 	case .Whitespace:
-		return  match_whitespace_utf8(r) > 0
+		return  info.vtable.match_whitespace(r)
 	case .Not_Whitespace:
-		return !(match_whitespace_utf8(r) > 0)
+		return !info.vtable.match_whitespace(r)
 	case:
 		return object.char == r
 	}
