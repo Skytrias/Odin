@@ -24,11 +24,6 @@ Object_ASCII :: struct {
 // options or stored class data we pass around
 Info_ASCII :: struct {
 	classes: []u8,
-	vtable: Vtable,
-}
-
-// table that has calls set based on options
-Vtable :: struct {
 	match_dot: proc(c: u8) -> bool,
 }
 
@@ -236,9 +231,7 @@ info_init_ascii :: proc(
 ) -> Info_ASCII {
 	return {
 		classes,
-		{
-			(.Dot_Matches_Newline in options) ? __match_dot_ascii_match_newline : __match_dot_ascii,
-		},
+		(.Dot_Matches_Newline in options) ? __match_dot_ascii_match_newline : __match_dot_ascii,
 	}
 }
 
@@ -389,7 +382,7 @@ match_one_ascii :: proc(
 	printf("[match 1] %c (%v)\n", char, object.type)
 	#partial switch object.type {
 	case .Sentinel:                return false
-	case .Dot:                     return  info.vtable.match_dot(char)
+	case .Dot:                     return  info.match_dot(char)
 	case .Character_Class:         return  match_character_class_ascii(char, info.classes)
 	case .Inverse_Character_Class: return !match_character_class_ascii(char, info.classes)
 	case .Digit:                   return  match_digit_ascii(char)

@@ -19,13 +19,6 @@ Object_UTF8 :: struct {
 
 Info_UTF8 :: struct {
 	classes: []rune,
-	vtable: Vtable_UTF8,
-}
-
-Vtable_UTF8 :: struct {
-	match_alpha: proc(r: rune) -> bool,
-	match_digit: proc(r: rune) -> bool,
-	match_whitespace: proc(r: rune) -> bool,
 	match_dot: proc(r: rune) -> bool,
 }
 
@@ -253,12 +246,7 @@ info_init_utf8 :: proc(
 ) -> Info_UTF8 {
 	return {
 		classes,
-		{
-			(.ASCII_Alpha_Match in options) ? __match_alpha_utf8_through_ascii : __match_alpha_utf8,
-			(.ASCII_Digit_Match in options) ? __match_digit_utf8_through_ascii : __match_digit_utf8,
-			(.ASCII_Whitespace_Match in options) ? __match_whitespace_utf8_through_ascii : __match_whitespace_utf8,
-			(.Dot_Matches_Newline in options) ? __match_dot_utf8_match_newline : __match_dot_utf8,
-		},
+		(.Dot_Matches_Newline in options) ? __match_dot_utf8_match_newline : __match_dot_utf8,
 	}
 }
 
@@ -369,7 +357,7 @@ __match_dot_utf8_match_newline :: proc(r: rune) -> bool {
 
 @(private="package")
 match_alphanum_utf8 :: proc(r: rune, info: Info_UTF8) -> bool {
-	return r == '_' || info.vtable.match_alpha(r) || info.vtable.match_digit(r)
+	return r == '_' || unicode.is_alpha(r) || unicode.is_digit(r)
 }
 
 @(private="package")
@@ -393,12 +381,12 @@ match_meta_character_utf8 :: proc(
 	info: Info_UTF8,
 ) -> bool {
 	switch meta {
-	case 'd': return info.vtable.match_digit(r)
-	case 'D': return !info.vtable.match_digit(r)
+	case 'd': return unicode.is_digit(r)
+	case 'D': return !unicode.is_digit(r)
 	case 'w': return match_alphanum_utf8(r, info)
 	case 'W': return !match_alphanum_utf8(r, info)
-	case 's': return info.vtable.match_whitespace(r)
-	case 'S': return !info.vtable.match_whitespace(r)
+	case 's': return unicode.is_space(r)
+	case 'S': return !unicode.is_space(r)
 	case:     return r == meta
 	}
 }
@@ -451,23 +439,23 @@ match_one_utf8 :: proc(
 	case .Sentinel:
 		return false
 	case .Dot:
-		return info.vtable.match_dot(r)
+		return info.match_dot(r)
 	case .Character_Class:
 		return match_character_class_utf8(r, info)
 	case .Inverse_Character_Class: 
 		return !match_character_class_utf8(r, info)
 	case .Digit:
-		return info.vtable.match_digit(r)
+		return unicode.is_digit(r)
 	case .Not_Digit:
-		return !info.vtable.match_digit(r)
+		return !unicode.is_digit(r)
 	case .Alpha:
 		return  match_alphanum_utf8(r, info)
 	case .Not_Alpha:
 		return !match_alphanum_utf8(r, info)
 	case .Whitespace:
-		return  info.vtable.match_whitespace(r)
+		return  unicode.is_space(r)
 	case .Not_Whitespace:
-		return !info.vtable.match_whitespace(r)
+		return !unicode.is_space(r)
 	case:
 		return object.char == r
 	}
