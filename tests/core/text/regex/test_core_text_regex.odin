@@ -40,6 +40,8 @@ Test_Entry :: struct {
 	err: regex.Error,
 }
 
+regexp: regex.Regexp
+
 ASCII_Simple_Cases := [?]Test_Entry {
 	// empty pattern/haystack
 	{ "", "test", {}, .Pattern_Empty },
@@ -242,8 +244,7 @@ test_check_match_entry :: proc(
 @test
 test_ascii_simple_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Simple_Cases {
-		fmt.eprintln("~~~~~~~~~~~~~~~~~~")
-		match, err := regex.match_string_ascii(entry.pattern, entry.haystack)
+		match, err := regex.match_string(&regexp, entry.pattern, entry.haystack)
 		test_check_match_entry(t, entry, match, err)
 	}
 }
@@ -251,8 +252,7 @@ test_ascii_simple_cases :: proc(t: ^testing.T) {
 @test
 test_ascii_meta_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Meta_Cases {
-		fmt.eprintln("~~~~~~~~~~~~~~~~~~")
-		match, err := regex.match_string_ascii(entry.pattern, entry.haystack)
+		match, err := regex.match_string(&regexp, entry.pattern, entry.haystack)
 		test_check_match_entry(t, entry, match, err)
 	}
 }
@@ -260,7 +260,7 @@ test_ascii_meta_cases :: proc(t: ^testing.T) {
 @test
 test_utf8_simple_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Simple_Cases {
-		match, err := regex.match_string_utf8(entry.pattern, entry.haystack)
+		match, err := regex.match_string(&regexp, entry.pattern, entry.haystack)
 		test_check_match_entry(t, entry, match, err)
 	}
 }
@@ -268,7 +268,7 @@ test_utf8_simple_cases :: proc(t: ^testing.T) {
 @test
 test_utf8_meta_cases :: proc(t: ^testing.T) {
 	for entry in ASCII_Meta_Cases {
-		match, err := regex.match_string_utf8(entry.pattern, entry.haystack)
+		match, err := regex.match_string(&regexp, entry.pattern, entry.haystack)
 		test_check_match_entry(t, entry, match, err)
 	}
 }
@@ -276,7 +276,7 @@ test_utf8_meta_cases :: proc(t: ^testing.T) {
 @test
 test_utf8_specific_cases :: proc(t: ^testing.T) {
 	for entry in UTF8_Specific_Cases {
-		match, err := regex.match_string_utf8(entry.pattern, entry.haystack)
+		match, err := regex.match_string(&regexp, entry.pattern, entry.haystack)
 		test_check_match_entry(t, entry, match, err)
 	}	
 }
@@ -284,7 +284,7 @@ test_utf8_specific_cases :: proc(t: ^testing.T) {
 @test
 test_utf8_temp_cases :: proc(t: ^testing.T) {
 	for entry in UTF8_Temp_Cases {
-		match, err := regex.match_string_utf8(entry.pattern, entry.haystack)
+		match, err := regex.match_string(&regexp, entry.pattern, entry.haystack)
 		test_check_match_entry(t, entry, match, err)
 	}	
 }
@@ -296,13 +296,18 @@ main :: proc() {
 	mem.tracking_allocator_init(&track, context.allocator)
 	context.allocator = mem.tracking_allocator(&track)
 
-	t: testing.T
-	test_ascii_simple_cases(&t)
-	test_ascii_meta_cases(&t)
-	// test_utf8_simple_cases(&t)
-	// test_utf8_meta_cases(&t)
-	// test_utf8_specific_cases(&t)
-	// test_utf8_temp_cases(&t)
+	{
+		regexp = regex.regexp_init()
+		defer regex.regexp_destroy(regexp)
+
+		t: testing.T
+		test_ascii_simple_cases(&t)
+		test_ascii_meta_cases(&t)
+		test_utf8_simple_cases(&t)
+		test_utf8_meta_cases(&t)
+		test_utf8_specific_cases(&t)
+		// test_utf8_temp_cases(&t)
+	}
 
 	fmt.printf("%v/%v tests successful.\n", TEST_count - TEST_fail, TEST_count)
 	if TEST_fail > 0 {
