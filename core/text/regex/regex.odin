@@ -47,7 +47,7 @@ MAX_CHAR_CLASS_LEN :: #config(REGEX_MAX_CHAR_CLASS_LEN, 40) /* Max length of cha
 DEFAULT_OPTIONS    :: Options {}
 
 Option :: enum u8 {
-	//`.` should match newline as well
+	// '.' should match newline as well
 	Dot_Matches_Newline,
 
 	// Case-Insensitive match, e.g. [a] matches [aA], can work with Unicode options
@@ -112,6 +112,9 @@ Regexp :: struct {
 	
 	// wether '.' matches on newline or not
 	match_dot: proc(rune) -> bool,
+	
+	// wether '.' matches on newline or not
+	match_casing: proc(rune, rune) -> bool,
 }
 
 Object :: struct {
@@ -139,8 +142,51 @@ regexp_destroy :: proc(regexp: Regexp) {
 	delete(regexp.classes)
 }
 
+regexp_print :: proc(regexp: ^Regexp) {
+	for o in regexp.objects {
+		if o.type == .Character_Class || o.type == .Inverse_Character_Class {
+			class := regexp.classes[o.class_start:o.class_end]
+			fmt.printf("type: %v%v\n", o.type, class)
+		} else if o.type == .Char {
+			fmt.printf("type: %v{{'%c'}}\n", o.type, o.char)
+		} else {
+			fmt.printf("type: %v\n", o.type)
+		}
+	}
+}
+
+// any options for the regexp set to vtables
+regexp_options :: proc(regexp: ^Regexp, options: Options) {
+	_match_dot_newline :: proc(r: rune) -> bool {
+		return r != '\n' && r != '\r'
+	}
+	_match_dot_fallthrough :: proc(r: rune) -> bool {
+		return true
+	}
+
+	if .Dot_Matches_Newline in options {
+		regexp.match_dot = _match_dot_fallthrough
+	} else {
+		regexp.match_dot = _match_dot_newline
+	}
+
+_match_case_insensitive :: proc(a, b: rune) -> bool {
+	return unicode.to_lower(a) == unicode.to_lower(b)
+}
+_match_case_sensitive :: proc(a, b: rune) -> bool {
+	return a == b
+}
+
+	if .Case_Insensitive in options {
+		regexp.match_casing = _match_case_insensitive
+	} else {
+		regexp.match_casing = _match_case_sensitive
+	}
+}
+
 // read the first rune and return a possible rune error
-read_rune :: proc(buf: string) -> (char: rune, rune_size: int, err: Error) {
+@(private="package")
+_read_rune :: proc(buf: string) -> (char: rune, rune_size: int, err: Error) {
 	char, rune_size = utf8.decode_rune(buf)
 	if char == utf8.RUNE_ERROR {
 		err = .Rune_Error
@@ -149,17 +195,13 @@ read_rune :: proc(buf: string) -> (char: rune, rune_size: int, err: Error) {
 }
 
 // read the last rune and return a possible rune error
-read_last_rune :: proc(buf: string) -> (char: rune, rune_size: int, err: Error) {
+@(private="package")
+_read_last_rune :: proc(buf: string) -> (char: rune, rune_size: int, err: Error) {
 	char, rune_size = utf8.decode_last_rune(buf)
 	if char == utf8.RUNE_ERROR {
 		err = .Rune_Error
 	}
 	return
-}
-
-// any options for the regexp set to vtables
-compile_options :: proc(regexp: ^Regexp, options: Options) {
-	regexp.match_dot = (.Dot_Matches_Newline in options) ? _match_dot_fallthrough : _match_dot_newline
 }
 
 // Public procedures
@@ -176,7 +218,7 @@ compile :: proc(regexp: ^Regexp, pattern: string, options := DEFAULT_OPTIONS) ->
 		return
 	}
 
-	compile_options(regexp, options)
+	regexp_options(regexp, options)
 
 	push_type :: proc(objects: ^[dynamic]Object, type: Operator_Type) {
 		append(objects, Object { type = type })
@@ -205,7 +247,7 @@ compile :: proc(regexp: ^Regexp, pattern: string, options := DEFAULT_OPTIONS) ->
 	rune_size: int 
 
 	for len(buf) > 0 {
-		char, rune_size = read_rune(buf) or_return
+		char, rune_size = _read_rune(buf) or_return
 
 		switch char {
 			// Meta-characters:
@@ -232,7 +274,7 @@ compile :: proc(regexp: ^Regexp, pattern: string, options := DEFAULT_OPTIONS) ->
 					return
 				}
 
-				char, rune_size = read_rune(buf) or_return
+				char, rune_size = _read_rune(buf) or_return
 
 				switch char {
 					// Meta-character:
@@ -260,7 +302,7 @@ compile :: proc(regexp: ^Regexp, pattern: string, options := DEFAULT_OPTIONS) ->
 				}
 
 				buf = buf[1:]
-				char, rune_size = read_rune(buf) or_return
+				char, rune_size = _read_rune(buf) or_return
 
 				// Remember where the rune buffer starts in `.classes`.
 				class_begin := len(classes)
@@ -276,7 +318,7 @@ compile :: proc(regexp: ^Regexp, pattern: string, options := DEFAULT_OPTIONS) ->
 					}
 
 					buf = buf[rune_size:]
-					char, rune_size = read_rune(buf) or_return
+					char, rune_size = _read_rune(buf) or_return
 				}
 
 				class_end := push_class(objects, inverted, class_begin)
@@ -297,7 +339,7 @@ compile :: proc(regexp: ^Regexp, pattern: string, options := DEFAULT_OPTIONS) ->
 						}
  
 						buf = buf[1:]
-						char, rune_size = read_rune(buf) or_return
+						char, rune_size = _read_rune(buf) or_return
 					}
 
 					if char == ']' {
@@ -312,7 +354,7 @@ compile :: proc(regexp: ^Regexp, pattern: string, options := DEFAULT_OPTIONS) ->
 					}
 
 					buf = buf[rune_size:]
-					char, rune_size = read_rune(buf) or_return
+					char, rune_size = _read_rune(buf) or_return
 				}
 
 				class_end^ = u16(len(classes))
@@ -373,7 +415,7 @@ match_compiled :: proc(
 					return
 				}
 
-				char, rune_size := read_rune(haystack[byte_idx:]) or_return
+				char, rune_size := _read_rune(haystack[byte_idx:]) or_return
 				
 				printf("\tSTEP RUNE: %v\tsize: %v\n", char, rune_size)
 				byte_idx += rune_size
@@ -402,15 +444,6 @@ match_whitespace :: proc(r: rune) -> bool {
 }
 
 @(private="package")
-_match_dot_newline :: proc(r: rune) -> bool {
-	return r != '\n' && r != '\r'
-}
-
-_match_dot_fallthrough :: proc(r: rune) -> bool {
-	return true
-}
-
-@(private="package")
 match_alphanum :: proc(r: rune) -> bool {
 	return r == '_' || unicode.is_alpha(r) || unicode.is_digit(r)
 }
@@ -425,8 +458,8 @@ match_range :: proc(r: rune, range: []rune) -> bool {
 }
 
 @(private="package")
-is_meta_character :: proc(r: rune) -> (match_size: int) {
-	return 1 if (r == 's') || (r == 'S') || (r == 'w') || (r == 'W') || (r == 'd') || (r == 'D') else 0
+is_meta_character :: proc(r: rune) -> bool {
+	return r == 's' || r == 'S' || r == 'w' || r == 'W' || r == 'd' || r == 'D'
 }
 
 @(private="package")
@@ -458,20 +491,21 @@ match_character_class :: proc(
 		if match_range(r, class) {
 			return true
 		} else if class[0] == '\\' {
-			/* Escape-char: Eat `\\` and match on next char. */
+			// Escape-char: Eat `\\` and match on next char.
 			class = class[1:]
+		
 			if len(class) == 0 {
 				return false
 			}
 
 			if match_meta_character(r, class[0]) {
 				return true
-			} else if r == class[0] && is_meta_character(r) > 0 {
+			} else if r == class[0] && !is_meta_character(r) {
 				return true
 			}
 		} else if r == class[0] {
-			if r == '-' && len(class) == 1 {
-				return true
+			if r == '-' {
+				return len(class) == 1
 			} else {
 				return true
 			}
@@ -522,7 +556,7 @@ match_star :: proc(
 
 	// run through temp haystack and compare by one
 	for len(temp_haystack) > 0 {
-		char, rune_size := read_rune(temp_haystack[:]) or_return
+		char, rune_size := _read_rune(temp_haystack[:]) or_return
 
 		if !match_one(regexp, p, char) {
 			break
@@ -541,7 +575,7 @@ match_star :: proc(
 		}
 
 		// read rune from the last front rune
-		_, rune_size := read_last_rune(haystack_front) or_return
+		_, rune_size := _read_last_rune(haystack_front) or_return
 
 		// reverse decrease the end of the front string
 		temp_haystack = haystack[len(haystack_front):]
@@ -568,7 +602,7 @@ match_plus :: proc(
 
 	// run through temp haystack and compare by one
 	for len(temp_haystack) > 0 {
-		char, rune_size := read_rune(temp_haystack[:]) or_return
+		char, rune_size := _read_rune(temp_haystack[:]) or_return
 
 		if !match_one(regexp, p, char) {
 			break
@@ -587,7 +621,7 @@ match_plus :: proc(
 		}
 
 		// read rune from the last front rune
-		_, rune_size := read_last_rune(haystack_front) or_return
+		_, rune_size := _read_last_rune(haystack_front) or_return
 
 		// reverse decrease the end of the front string
 		temp_haystack = haystack[len(haystack_front):]
@@ -614,7 +648,7 @@ match_question :: proc(
 
 	// check first character
 	if len(haystack) > 0 {
-		char, rune_size := read_rune(haystack[:]) or_return
+		char, rune_size := _read_rune(haystack[:]) or_return
 
 		// check first rune
 		if !match_one(regexp, p, char) {
@@ -656,7 +690,7 @@ match_pattern :: proc(
 		char: rune
 		rune_size: int
 		if len(haystack) != 0 {
-			char, rune_size = read_rune(haystack[:]) or_return
+			char, rune_size = _read_rune(haystack[:]) or_return
 		}
 
 		if p0.type == .Sentinel {
@@ -698,17 +732,4 @@ match_pattern :: proc(
 	
 	length^ = length_in
 	return .No_Match
-}
-
-regexp_print :: proc(regexp: ^Regexp) {
-	for o in regexp.objects {
-		if o.type == .Character_Class || o.type == .Inverse_Character_Class {
-			class := regexp.classes[o.class_start:o.class_end]
-			fmt.printf("type: %v%v\n", o.type, class)
-		} else if o.type == .Char {
-			fmt.printf("type: %v{{'%c'}}\n", o.type, o.char)
-		} else {
-			fmt.printf("type: %v\n", o.type)
-		}
-	}
 }
