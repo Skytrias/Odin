@@ -216,8 +216,9 @@ UTF8_Specific_Cases := [?]Test_Entry {
 	{ ".st", "ab恥恥st", { 5, 3, 3 }, .OK },
 }
 
-UTF8_Temp_Cases := [?]Test_Entry {
-	{ ".st", "ab恥恥st", { 5, 3, 3 }, .OK }, // failed previously
+Case_Insensitive_Cases := [?]Test_Entry {
+	{ "test", "teSt", { 0, 0, 4 }, .OK },
+	{ "hello world", "Hello World", { 0, 0, 11 }, .OK },
 }
 
 test_check_match_entry :: proc(
@@ -282,9 +283,9 @@ test_utf8_specific_cases :: proc(t: ^testing.T) {
 }
 
 @test
-test_utf8_temp_cases :: proc(t: ^testing.T) {
-	for entry in UTF8_Temp_Cases {
-		match, err := regex.match_string(&regexp, entry.pattern, entry.haystack)
+test_case_insensitive_cases :: proc(t: ^testing.T) {
+	for entry in Case_Insensitive_Cases {
+		match, err := regex.match_string(&regexp, entry.pattern, entry.haystack, { .Case_Insensitive })
 		test_check_match_entry(t, entry, match, err)
 	}	
 }
@@ -306,7 +307,7 @@ main :: proc() {
 		test_utf8_simple_cases(&t)
 		test_utf8_meta_cases(&t)
 		test_utf8_specific_cases(&t)
-		// test_utf8_temp_cases(&t)
+		test_case_insensitive_cases(&t)
 	}
 
 	fmt.printf("%v/%v tests successful.\n", TEST_count - TEST_fail, TEST_count)

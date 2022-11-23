@@ -112,9 +112,6 @@ Regexp :: struct {
 	
 	// wether '.' matches on newline or not
 	match_dot: proc(rune) -> bool,
-	
-	// wether '.' matches on newline or not
-	match_casing: proc(rune, rune) -> bool,
 }
 
 Object :: struct {
@@ -168,19 +165,6 @@ regexp_options :: proc(regexp: ^Regexp, options: Options) {
 		regexp.match_dot = _match_dot_fallthrough
 	} else {
 		regexp.match_dot = _match_dot_newline
-	}
-
-_match_case_insensitive :: proc(a, b: rune) -> bool {
-	return unicode.to_lower(a) == unicode.to_lower(b)
-}
-_match_case_sensitive :: proc(a, b: rune) -> bool {
-	return a == b
-}
-
-	if .Case_Insensitive in options {
-		regexp.match_casing = _match_case_insensitive
-	} else {
-		regexp.match_casing = _match_case_sensitive
 	}
 }
 
@@ -245,6 +229,7 @@ compile :: proc(regexp: ^Regexp, pattern: string, options := DEFAULT_OPTIONS) ->
 	buf := pattern
 	char: rune
 	rune_size: int 
+	case_insensitive := .Case_Insensitive in options
 
 	for len(buf) > 0 {
 		char, rune_size = _read_rune(buf) or_return
@@ -361,8 +346,24 @@ compile :: proc(regexp: ^Regexp, pattern: string, options := DEFAULT_OPTIONS) ->
 			}
 
 			case: {
-				// Other characters
-				push_char(objects, char)
+				if case_insensitive && unicode.is_letter(char) {
+					class_end := push_class(objects, false, len(classes))
+					lower := unicode.to_lower(char)
+					
+					// is lowercase -> push uppercase
+					if char == lower {
+						append(classes, char)
+						append(classes, unicode.to_upper(char))
+					} else {
+						append(classes, char)
+						append(classes, lower)
+					}
+
+					class_end^ = u16(len(classes))
+				} else {
+					// Other characters
+					push_char(objects, char)
+				}
 			}
 		}
 
