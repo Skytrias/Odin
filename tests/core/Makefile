@@ -2,13 +2,13 @@ ODIN=../../odin
 PYTHON=$(shell which python3)
 
 all: download_test_assets image_test compress_test strings_test hash_test crypto_test noise_test encoding_test \
-	 math_test linalg_glsl_math_test filepath_test reflect_test os_exit_test i18n_test c_libc_test
+	 math_test linalg_glsl_math_test filepath_test reflect_test os_exit_test i18n_test regex_test c_libc_test
 
 download_test_assets:
 	$(PYTHON) download_assets.py
 
 image_test:
-	$(ODIN) run image/test_core_image.odin -file -out:test_core_image
+	$(ODIN) run image/test_core_image.odin -file -out:generated/test_core_image
 
 compress_test:
 	$(ODIN) run compress/test_core_compress.odin -file -out:test_core_compress
@@ -49,8 +49,7 @@ os_exit_test:
 i18n_test:
 	$(ODIN) run text/i18n -out:test_core_i18n
 
-# regex_test:
-build:
+regex_test:
 	$(ODIN) run text/regex -out:test_core_regex
 
 c_libc_test:
