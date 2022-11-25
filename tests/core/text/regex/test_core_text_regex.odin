@@ -103,11 +103,19 @@ ASCII_Simple_Cases := [?]Test_Entry {
 	{ "\\S", " ", {}, .No_Match },
 	{ "\\S\\S\\S", "abc", { 0, 0, 3 }, .OK },
 
-	// inverse class
+	// inverted class
 	{ "[^a]", "0", { 0, 0, 1 }, .OK },
 	{ "[^a]", "a", {}, .No_Match },
 	{ "[^a]", "A", { 0, 0, 1 }, .OK },
 	{ "[^", "", {}, .Pattern_Ended_Unexpectedly }, // check early ending
+	{ "[^abc]", "abctest", { 3, 3, 1 }, .OK },
+	// { "[^abc]+", "abctest", { 3, 3, 4 }, .OK },
+
+	// character ranges
+	{ "[a-z]+", "abcdef", { 0, 0, 6 }, .OK },
+	{ "[a-z]+", "abcdefABC", { 0, 0, 6 }, .OK },
+	{ "[A-Z]+", "ABCDEFabc", { 0, 0, 6 }, .OK },
+	{ "[A-Z]+", "abcDEFabc", { 3, 3, 3 }, .OK },
 }
 
 ASCII_Meta_Cases := [?]Test_Entry {
@@ -259,22 +267,6 @@ test_ascii_meta_cases :: proc(t: ^testing.T) {
 }
 
 @test
-test_utf8_simple_cases :: proc(t: ^testing.T) {
-	for entry in ASCII_Simple_Cases {
-		match, err := regex.match_string(&regexp, entry.pattern, entry.haystack)
-		test_check_match_entry(t, entry, match, err)
-	}
-}
-
-@test
-test_utf8_meta_cases :: proc(t: ^testing.T) {
-	for entry in ASCII_Meta_Cases {
-		match, err := regex.match_string(&regexp, entry.pattern, entry.haystack)
-		test_check_match_entry(t, entry, match, err)
-	}
-}
-
-@test
 test_utf8_specific_cases :: proc(t: ^testing.T) {
 	for entry in UTF8_Specific_Cases {
 		match, err := regex.match_string(&regexp, entry.pattern, entry.haystack)
@@ -304,10 +296,14 @@ main :: proc() {
 		t: testing.T
 		test_ascii_simple_cases(&t)
 		test_ascii_meta_cases(&t)
-		test_utf8_simple_cases(&t)
-		test_utf8_meta_cases(&t)
 		test_utf8_specific_cases(&t)
 		test_case_insensitive_cases(&t)
+
+		// {
+		// 	entry := Test_Entry { "[a-z]+", "abcdef", { 0, 0, 6 }, .OK }
+		// 	match, err := regex.match_string(&regexp, entry.pattern, entry.haystack, { .Case_Insensitive })
+		// 	test_check_match_entry(&t, entry, match, err)
+		// }
 	}
 
 	fmt.printf("%v/%v tests successful.\n", TEST_count - TEST_fail, TEST_count)

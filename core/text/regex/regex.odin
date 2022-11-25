@@ -7,7 +7,6 @@
 */
 package regex
 
-import "core:mem"
 import "core:fmt"
 import "core:unicode"
 import "core:unicode/utf8"
@@ -34,12 +33,6 @@ import "core:unicode/utf8"
 	'\d'       Digits, [0-9]
 	'\D'       Non-digits
 */
-
-when false {
-	printf :: fmt.printf
-} else {
-	printf :: proc(f: string, v: ..any) {}
-}
 
 MAX_REGEXP_OBJECTS :: #config(REGEX_MAX_REGEXP_OBJECTS, 30) /* Max number of regex symbols in expression. */
 MAX_CHAR_CLASS_LEN :: #config(REGEX_MAX_CHAR_CLASS_LEN, 40) /* Max length of character-class buffer in.   */
@@ -418,7 +411,6 @@ match_compiled :: proc(
 
 				char, rune_size := _read_rune(haystack[byte_idx:]) or_return
 				
-				printf("\tSTEP RUNE: %v\tsize: %v\n", char, rune_size)
 				byte_idx += rune_size
 				char_idx += 1
 			}
@@ -524,8 +516,6 @@ match_one :: proc(
 	object: Object, 
 	r: rune,
 ) -> bool {
-	printf("[match 1] %c (%v)\n", r, object.type)
-
 	#partial switch object.type {
 	case .Sentinel:                return false
 	case .Dot:                     return regexp.match_dot(r)
@@ -616,6 +606,7 @@ match_plus :: proc(
 
 	// run through the string in reverse (decode utf8 in reverse)
 	haystack_front := haystack[:len(haystack) - len(temp_haystack)]
+
 	for count > 0 {
 		if match_pattern(regexp, pattern, temp_haystack, length) == .OK {
 			return .OK
@@ -672,15 +663,10 @@ match_pattern :: proc(
 	haystack: string, 
 	length: ^int,
 ) -> (err: Error) {
-	// end early in case of empty pattern or buffer
-	if len(haystack) == 0 || len(pattern) == 0 {
-		return .No_Match
-	}
-
+	// NOTE(Skytrias): no early termination allowed for haystack or patterns
 	pattern := pattern
 	haystack := haystack
 	length_in := length^
-	printf("[match] %v\n", haystack)
 
 	for {
 		// NOTE(Skytrias): simple bounds checking
@@ -699,17 +685,14 @@ match_pattern :: proc(
 			return
 		} else if p1.type == .Question_Mark {
 			if len(pattern) > 2 {
-				printf("[match ?] char: %v | TYPES: %v & %v\n", char, p0.type, p1.type)
 				return match_question(regexp, p0, pattern[2:], haystack, length)
 			}
 		} else if p1.type == .Star {
 			if len(pattern) > 2 {
-				printf("[match *] char: %v\n", char)
 				return match_star(regexp, p0, pattern[2:], haystack, length)
 			}
 		} else if p1.type == .Plus {
 			if len(pattern) > 2 {
-				printf("[match +] char: %v\n", char)
 				return match_plus(regexp, p0, pattern[2:], haystack, length)
 			}
 		} else if p0.type == .End && p1.type == .Sentinel {
@@ -728,7 +711,6 @@ match_pattern :: proc(
 		haystack = haystack[rune_size:]
 		pattern = pattern[1:]
 		length^ += 1
-		printf("[LEN]: %v\n", length^)
 	}
 	
 	length^ = length_in
