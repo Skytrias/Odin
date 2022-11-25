@@ -8,6 +8,7 @@
 package regex
 
 import "core:fmt"
+import "core:strings"
 import "core:unicode"
 import "core:unicode/utf8"
 
@@ -45,6 +46,9 @@ Option :: enum u8 {
 
 	// Case-Insensitive match, e.g. [a] matches [aA], can work with Unicode options
 	Case_Insensitive,
+
+	// // allows matches with '$' at each newline
+	// Multiline,
 }
 Options :: bit_set[Option; u8]
 
@@ -90,6 +94,12 @@ Match :: struct {
 	
 	// length of the match in characters
 	length: int,
+}
+
+// Match used for multi lines, where you can track which line the match was at
+Multiline_Match :: struct {
+	using match: Match,
+	line: int,
 }
 
 // Regexp is a dynamic compiled version of a regex pattern expression
@@ -166,6 +176,7 @@ regexp_options :: proc(regexp: ^Regexp, options: Options) {
 _read_rune :: proc(buf: string) -> (char: rune, rune_size: int, err: Error) {
 	char, rune_size = utf8.decode_rune(buf)
 	if char == utf8.RUNE_ERROR {
+		fmt.eprintln("WHERE", buf)
 		err = .Rune_Error
 	}
 	return
@@ -173,9 +184,10 @@ _read_rune :: proc(buf: string) -> (char: rune, rune_size: int, err: Error) {
 
 // read the last rune and return a possible rune error
 @(private="package")
-_read_last_rune :: proc(buf: string) -> (char: rune, rune_size: int, err: Error) {
+_read_last_rune :: proc(buf: string, loc := #caller_location) -> (char: rune, rune_size: int, err: Error) {
 	char, rune_size = utf8.decode_last_rune(buf)
 	if char == utf8.RUNE_ERROR {
+		fmt.eprintln("WHERE2", buf, loc)
 		err = .Rune_Error
 	}
 	return
@@ -392,7 +404,7 @@ match_compiled :: proc(
 	if len(pattern) > 0 {
 		if pattern[0].type == .Begin {
 			length: int
-			err = match_pattern(regexp, pattern[1:], haystack, &length)
+			match_pattern(regexp, pattern[1:], haystack, &length) or_return
 			match = { 0, 0, length }
 			return
 		} else {
@@ -418,6 +430,52 @@ match_compiled :: proc(
 	}
 
 	err = .No_Match
+	return
+}
+
+match_multiline_string :: proc(
+	regexp: ^Regexp,
+	pattern: string, 
+	haystack: string, 
+	matches: ^[dynamic]Multiline_Match,
+	options := DEFAULT_OPTIONS,
+) -> (err: Error) {
+	haystack := haystack
+	compile(regexp, pattern, options) or_return
+	clear(matches)
+	lines := haystack
+	line_count: int
+
+	for line in strings.split_lines_iterator(&lines) {
+		line := line
+		match, error := match_compiled(regexp, line)
+
+		if error == .OK {
+			append(matches, Multiline_Match { match, line_count })
+
+			// advance haystack
+			line = line[match.byte_offset:]
+
+			// traverse by utf8 walking
+			for i in 0..<match.length {
+				char, rune_size := utf8.decode_rune(line)
+
+				if char != utf8.RUNE_ERROR {
+					line = line[rune_size:]
+				} 
+			}
+		} else {
+			if error != .No_Match {
+				fmt.eprintln("2")
+				err = error
+				return
+			}
+		}
+
+		line_count += 1
+	}
+
+	err = .OK
 	return
 }
 
@@ -566,11 +624,13 @@ match_star :: proc(
 		}
 
 		// read rune from the last front rune
-		_, rune_size := _read_last_rune(haystack_front) or_return
+		if len(haystack_front) > 0 {
+			_, rune_size := _read_last_rune(haystack_front) or_return
 
-		// reverse decrease the end of the front string
-		temp_haystack = haystack[len(haystack_front):]
-		haystack_front = haystack_front[:len(haystack_front) - rune_size]
+			// reverse decrease the end of the front string
+			temp_haystack = haystack[len(haystack_front):]
+			haystack_front = haystack_front[:len(haystack_front) - rune_size]
+		}
 		
 		count -= 1
 		length^ -= 1

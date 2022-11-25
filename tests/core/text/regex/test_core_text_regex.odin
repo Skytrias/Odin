@@ -109,13 +109,26 @@ ASCII_Simple_Cases := [?]Test_Entry {
 	{ "[^a]", "A", { 0, 0, 1 }, .OK },
 	{ "[^", "", {}, .Pattern_Ended_Unexpectedly }, // check early ending
 	{ "[^abc]", "abctest", { 3, 3, 1 }, .OK },
-	// { "[^abc]+", "abctest", { 3, 3, 4 }, .OK },
+	{ "[^abc]+", "abctest", { 3, 3, 4 }, .OK },
+	{ "[^abc]+", "abctestabc", { 3, 3, 4 }, .OK },
+	{ "[^0-9]+", "012abc0123", { 3, 3, 3 }, .OK },
+	
+	// meta inside classes
+	{ "[\\w]+", "   1234   ", { 3, 3, 4 }, .OK },
+	{ "[\\s]+", "123    123", { 3, 3, 4 }, .OK },
 
 	// character ranges
 	{ "[a-z]+", "abcdef", { 0, 0, 6 }, .OK },
 	{ "[a-z]+", "abcdefABC", { 0, 0, 6 }, .OK },
 	{ "[A-Z]+", "ABCDEFabc", { 0, 0, 6 }, .OK },
 	{ "[A-Z]+", "abcDEFabc", { 3, 3, 3 }, .OK },
+	{ "[0-9]+", "abc012abc", { 3, 3, 3 }, .OK },
+	
+	// multiple character ranges
+	{ "[a-zA-Z]+", "abcDEFabc", { 0, 0, 9 }, .OK },
+	{ "[a-cA-C]+", "abcDEFabc", { 0, 0, 3 }, .OK },
+	{ "[a-cA-C]+", "___DEFabc", { 6, 6, 3 }, .OK },
+	{ "[d-fD-F]+", "abcDEFabc", { 3, 3, 3 }, .OK },
 }
 
 ASCII_Meta_Cases := [?]Test_Entry {
@@ -130,6 +143,12 @@ ASCII_Meta_Cases := [?]Test_Entry {
 	{ "$", "test", {}, .No_Match },
 	{ "test$", "test", { 0, 0, 4 }, .OK },
 	{ "test$", "abctest", { 3, 3, 4 }, .OK },
+
+	// begin + end
+	{ "^testing$", "testing", { 0, 0, 7 }, .OK },
+	{ "^testing this$", "testing", {}, .No_Match },
+	{ "^testing$", "abc testing", {}, .No_Match },
+	{ "^testing$", "testing abc", {}, .No_Match },
 
 	// dot
 	{ ".", "a", { 0, 0, 1 }, .OK },
@@ -282,6 +301,29 @@ test_case_insensitive_cases :: proc(t: ^testing.T) {
 	}	
 }
 
+@test
+test_larger_cases :: proc(t: ^testing.T) {
+	pattern := "^[0-9]*$"
+	haystack := `t1est
+23
+foo
+bar
+304958
+bar`
+
+	matches := make([dynamic]regex.Multiline_Match, 0, 32, context.temp_allocator)
+	err := regex.match_multiline_string(&regexp, pattern, haystack, &matches)
+
+	results := [?]regex.Multiline_Match {
+		{ { 0, 0, 2 }, 1, },
+		{ { 0, 0, 6 }, 4 },
+	}
+
+	for match, i in matches {
+		expect(t, match == results[i], fmt.tprintf("Multi-line match failed %v != %v\n", match, results[i]))
+	}
+}
+
 main :: proc() {
 	using fmt
 
@@ -298,6 +340,8 @@ main :: proc() {
 		test_ascii_meta_cases(&t)
 		test_utf8_specific_cases(&t)
 		test_case_insensitive_cases(&t)
+
+		test_larger_cases(&t)
 
 		// {
 		// 	entry := Test_Entry { "[a-z]+", "abcdef", { 0, 0, 6 }, .OK }
