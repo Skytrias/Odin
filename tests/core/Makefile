@@ -8,7 +8,7 @@ download_test_assets:
 	$(PYTHON) download_assets.py
 
 image_test:
-	$(ODIN) run image/test_core_image.odin -file -out:generated/test_core_image
+	$(ODIN) run image/test_core_image.odin -file -out:test_core_image
 
 compress_test:
 	$(ODIN) run compress/test_core_compress.odin -file -out:test_core_compress

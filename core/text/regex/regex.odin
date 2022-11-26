@@ -420,7 +420,6 @@ match_compiled :: proc(
 				}
 
 				char, rune_size := _read_rune(haystack[byte_idx:]) or_return
-				
 				byte_idx += rune_size
 				char_idx += 1
 			}
