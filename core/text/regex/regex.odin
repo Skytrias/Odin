@@ -176,7 +176,6 @@ regexp_options :: proc(regexp: ^Regexp, options: Options) {
 _read_rune :: proc(buf: string) -> (char: rune, rune_size: int, err: Error) {
 	char, rune_size = utf8.decode_rune(buf)
 	if char == utf8.RUNE_ERROR {
-		fmt.eprintln("WHERE", buf)
 		err = .Rune_Error
 	}
 	return
@@ -187,7 +186,6 @@ _read_rune :: proc(buf: string) -> (char: rune, rune_size: int, err: Error) {
 _read_last_rune :: proc(buf: string, loc := #caller_location) -> (char: rune, rune_size: int, err: Error) {
 	char, rune_size = utf8.decode_last_rune(buf)
 	if char == utf8.RUNE_ERROR {
-		fmt.eprintln("WHERE2", buf, loc)
 		err = .Rune_Error
 	}
 	return
@@ -466,7 +464,6 @@ match_multiline_string :: proc(
 			}
 		} else {
 			if error != .No_Match {
-				fmt.eprintln("2")
 				err = error
 				return
 			}
@@ -628,8 +625,8 @@ match_star :: proc(
 			_, rune_size := _read_last_rune(haystack_front) or_return
 
 			// reverse decrease the end of the front string
-			temp_haystack = haystack[len(haystack_front):]
 			haystack_front = haystack_front[:len(haystack_front) - rune_size]
+			temp_haystack = haystack[len(haystack_front):]
 		}
 		
 		count -= 1
@@ -676,8 +673,8 @@ match_plus :: proc(
 		_, rune_size := _read_last_rune(haystack_front) or_return
 
 		// reverse decrease the end of the front string
-		temp_haystack = haystack[len(haystack_front):]
 		haystack_front = haystack_front[:len(haystack_front) - rune_size]
+		temp_haystack = haystack[len(haystack_front):]
 		
 		count -= 1
 		length^ -= 1
@@ -733,34 +730,32 @@ match_pattern :: proc(
 		p0 := len(pattern) > 0 ? pattern[0] : {}
 		p1 := len(pattern) > 1 ? pattern[1] : {}
 		
-		// fetch the next rune, available for printing
-		char: rune
-		rune_size: int
-		if len(haystack) != 0 {
-			char, rune_size = _read_rune(haystack[:]) or_return
-		}
-
 		if p0.type == .Sentinel {
 			err = .OK
 			return
 		} else if p1.type == .Question_Mark {
-			if len(pattern) > 2 {
+			// if len(pattern) > 2 {
 				return match_question(regexp, p0, pattern[2:], haystack, length)
-			}
+			// }
 		} else if p1.type == .Star {
-			if len(pattern) > 2 {
+			// if len(pattern) > 2 {
 				return match_star(regexp, p0, pattern[2:], haystack, length)
-			}
+			// }
 		} else if p1.type == .Plus {
-			if len(pattern) > 2 {
+			// if len(pattern) > 2 {
 				return match_plus(regexp, p0, pattern[2:], haystack, length)
-			}
+			// }
 		} else if p0.type == .End && p1.type == .Sentinel {
-			if len(haystack) == 0 {
-				return .OK
-			}
+			return .OK if len(haystack) == 0 else .No_Match
+		}
 
-			return .No_Match
+		// fetch the next rune, available for printing
+		char: rune
+		rune_size: int
+		if len(haystack) > 0 {
+			char, rune_size = _read_rune(haystack[:]) or_return
+		} else {
+			break
 		}
 
 		if !match_one(regexp, p0, char) {

@@ -248,11 +248,91 @@ Case_Insensitive_Cases := [?]Test_Entry {
 	{ "hello world", "Hello World", { 0, 0, 11 }, .OK },
 }
 
+TINY1_Cases := [?]Test_Entry {
+  { "\\d", "5", { 0, 0, 1 }, .OK },
+  { "\\w+", "hej", { 0, 0, 3 }, .OK },
+  { "\\s", "\t \n",  { 0, 0, 1 }, .OK },
+  { "\\S", "\t \n", { 0, 0, 0 }, .No_Match },
+  { "[\\s]", "\t \n", { 0, 0, 1 }, .OK },
+  { "[\\S]", "\t \n", { 0, 0, 0 }, .No_Match },
+  { "\\D", "5", { 0, 0, 0 }, .No_Match },
+  { "\\W+", "hej", { 0, 0, 0 }, .No_Match },
+  { "[0-9]+", "12345", { 0, 0, 5 }, .OK },
+  { "\\D", "hej", { 0, 0, 1 }, .OK },
+  { "\\d", "hej", { 0, 0, 0 }, .No_Match },
+  { "[^\\w]", "\\", { 0, 0, 1 }, .OK },
+  { "[\\W]", "\\", { 0, 0, 1 }, .OK },
+  { "[\\w]", "\\", { 0, 0, 0 }, .No_Match },
+  { "[^\\d]", "d", { 0, 0, 1 }, .OK },
+  { "[\\d]", "d", { 0, 0, 0 }, .No_Match },
+  { "[^\\D]", "d", { 0, 0, 0 }, .No_Match },
+  { "[\\D]", "d", { 0, 0, 1 }, .OK },
+  { "^.*\\\\.*$", "c:\\Tools", { 0, 0, 8 }, .OK },
+  { "^[\\+-]*[\\d]+$",  "+27", { 0, 0, 3 }, .OK },
+  { "[abc]", "1c2", { 1, 1, 1 }, .OK },
+  { "[abc]", "1C2", { 0, 0, 0 }, .No_Match },
+  { "[1-5]+", "0123456789", { 1, 1, 5 }, .OK },
+  { "[.2]", "1C2", { 2, 2, 1 }, .OK },
+  { "a*$", "Xaa", { 1, 1, 2 }, .OK },
+  { "[a-h]+", "abcdefghxxx",  { 0, 0, 8 }, .OK },
+  { "[a-h]+", "ABCDEFGH", { 0, 0, 0 }, .No_Match },
+  { "[A-H]+", "ABCDEFGH", { 0, 0, 8 }, .OK },
+  { "[A-H]+", "abcdefgh", { 0, 0, 0 }, .No_Match },
+  { "[^\\s]+", "abc def", { 0, 0, 3 }, .OK },
+  { "[^fc]+", "abc def", { 0, 0, 2 }, .OK },
+  { "[^d\\sf]+", "abc def", { 0, 0, 3 }, .OK },
+  { "\n", "abc\ndef", { 3, 3, 1 }, .OK },
+  { "b.\\s*\n", "aa\r\nbb\r\ncc\r\n\r\n",{ 4, 4, 4 }, .OK },
+  { ".*c", "abcabc", { 0, 0, 6 }, .OK },
+  { ".+c", "abcabc", { 0, 0, 6 }, .OK },
+  { "[b-z].*", "ab", { 1, 1, 1 }, .OK },
+  { "b[k-z]*", "ab", { 1, 1, 1 }, .OK },
+  { "[0-9]", "  - ", { 0, 0, 0 }, .No_Match },
+  { "[^0-9]", "  - ", { 0, 0, 1 }, .OK },
+  // { "0|", "0|", { 0, 0, 2 }, .OK }, // unsupported
+  { "0|", "0|", {}, .Operation_Unsupported },
+  { "\\d\\d:\\d\\d:\\d\\d", "0s:00:00", { 0, 0, 0 }, .No_Match },
+  { "\\d\\d:\\d\\d:\\d\\d", "000:00", { 0, 0, 0 }, .No_Match },
+  { "\\d\\d:\\d\\d:\\d\\d", "00:0000", { 0, 0, 0 }, .No_Match },
+  { "\\d\\d:\\d\\d:\\d\\d", "100:0:00", { 0, 0, 0 }, .No_Match },
+  { "\\d\\d:\\d\\d:\\d\\d", "00:100:00", { 0, 0, 0 }, .No_Match },
+  { "\\d\\d:\\d\\d:\\d\\d", "0:00:100", { 0, 0, 0 }, .No_Match },
+  { "\\d\\d?:\\d\\d?:\\d\\d?",   "0:0:0",            { 0, 0, 5 }, .OK },
+  { "\\d\\d?:\\d\\d?:\\d\\d?",   "0:00:0",           { 0, 0, 6 }, .OK },
+  { "\\d\\d?:\\d\\d?:\\d\\d?",   "0:0:00",           { 0, 0, 5 }, .OK },
+  { "\\d\\d?:\\d\\d?:\\d\\d?",   "00:0:0",           { 0, 0, 6 }, .OK },
+  { "\\d\\d?:\\d\\d?:\\d\\d?",   "00:00:0",          { 0, 0, 7 }, .OK },
+  { "\\d\\d?:\\d\\d?:\\d\\d?",   "00:0:00",          { 0, 0, 6 }, .OK },
+  { "\\d\\d?:\\d\\d?:\\d\\d?",   "0:00:00",          { 0, 0, 6 }, .OK },
+  { "\\d\\d?:\\d\\d?:\\d\\d?",   "00:00:00",         { 0, 0, 7 }, .OK },
+  { "[Hh]ello [Ww]orld\\s*[!]?", "Hello world !",    { 0, 0, 12 }, .OK },
+  { "[Hh]ello [Ww]orld\\s*[!]?", "hello world !",    { 0, 0, 12 }, .OK },
+  { "[Hh]ello [Ww]orld\\s*[!]?", "Hello World !",    { 0, 0, 12 }, .OK },
+  { "[Hh]ello [Ww]orld\\s*[!]?", "Hello world!   ",  { 0, 0, 11 }, .OK },
+  { "[Hh]ello [Ww]orld\\s*[!]?", "Hello world  !",   { 0, 0, 13 }, .OK },
+  { "[Hh]ello [Ww]orld\\s*[!]?", "hello World    !", { 0, 0, 15 }, .OK },
+  { "\\d\\d?:\\d\\d?:\\d\\d?",   "a:0", { 0, 0, 0 }, .No_Match }, /* Failing test case reported in https://github.com/kokke/tiny-regex-c/issues/12 , .No_Match */
+/*
+  { "[^\\w][^-1-4]",     ")T",          { 0, 0, 2 }, .OK },
+  { "[^\\w][^-1-4]",     ")^",          { 0, 0, 2 }, .OK },
+  { "[^\\w][^-1-4]",     "*)",          { 0, 0, 2 }, .OK },
+  { "[^\\w][^-1-4]",     "!.",          { 0, 0, 2 }, .OK },
+  { "[^\\w][^-1-4]",     " x",          { 0, 0, 2 }, .OK },
+  { "[^\\w][^-1-4]",     "$b",          { 0, 0, 2 }, .OK },
+*/
+  { ".?bar", "real_bar", { 4, 4, 4 }, .OK },
+  { ".?bar", "real_foo", {}, .No_Match },
+  { "X?Y", "Z", { 0, 0, 0 }, .No_Match },
+  { "[a-z]+\nbreak", "blahblah\nbreak",  { 0, 0, 14 }, .OK },
+  { "[a-z\\s]+\nbreak", "bla bla \nbreak",  { 0, 0, 14 }, .OK },
+}
+
 test_check_match_entry :: proc(
 	t: ^testing.T,
 	entry: Test_Entry,
 	match: regex.Match,
 	err: regex.Error,
+	loc := #caller_location,
 ) {
 	expect(
 		t, 
@@ -266,6 +346,7 @@ test_check_match_entry :: proc(
 			match, 
 			err,
 		),
+		loc,
 	)
 }
 
@@ -324,6 +405,15 @@ bar`
 	}
 }
 
+// from https://github.com/kokke/tiny-regex-c/blob/master/tests/test1.c
+@test
+test_tiny1_cases :: proc(t: ^testing.T) {
+	for entry in TINY1_Cases {
+		match, err := regex.match_string(&regexp, entry.pattern, entry.haystack)
+		test_check_match_entry(t, entry, match, err)
+	}	
+}
+
 main :: proc() {
 	using fmt
 
@@ -340,11 +430,14 @@ main :: proc() {
 		test_ascii_meta_cases(&t)
 		test_utf8_specific_cases(&t)
 		test_case_insensitive_cases(&t)
-
 		test_larger_cases(&t)
+		test_tiny1_cases(&t)
 
 		// {
-		// 	entry := Test_Entry { "[a-z]+", "abcdef", { 0, 0, 6 }, .OK }
+		//   entry := Test_Entry { ".*c", "abcabc", { 0, 0, 6 }, .OK }
+  // // { ".+c", "abcabc", { 0, 0, 6 }, .OK },
+
+		// 	// entry := Test_Entry { "[a-z]+", "abcdef", { 0, 0, 6 }, .OK }
 		// 	match, err := regex.match_string(&regexp, entry.pattern, entry.haystack, { .Case_Insensitive })
 		// 	test_check_match_entry(&t, entry, match, err)
 		// }
