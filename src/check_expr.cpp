@@ -1528,6 +1528,55 @@ gb_internal bool check_cycle(CheckerContext *c, Entity *curr, bool report) {
 	return false;
 }
 
+struct CIdentSuggestion {
+	String name;
+	String msg;
+};
+
+// NOTE(bill): this linear look-up table might be slow but because it's an error case, it should be fine
+gb_internal CIdentSuggestion const c_ident_suggestions[] = {
+	{str_lit("while"),     str_lit("'for'? Odin only has one loop construct: 'for'")},
+
+	{str_lit("sizeof"),    str_lit("'size_of'?")},
+	{str_lit("alignof"),   str_lit("'align_of'?")},
+	{str_lit("offsetof"),  str_lit("'offset_of'?")},
+
+	{str_lit("_Bool"),     str_lit("'bool'?")},
+
+	{str_lit("char"),      str_lit("'u8', 'i8', or 'c.char' (which is part of 'core:c')?")},
+	{str_lit("short"),     str_lit("'i16' or 'c.short' (which is part of 'core:c')?")},
+	{str_lit("long"),      str_lit("'c.long' (which is part of 'core:c')?")},
+	{str_lit("float"),     str_lit("'f32'?")},
+	{str_lit("double"),    str_lit("'f64'?")},
+	{str_lit("unsigned"),  str_lit("'c.uint' (which is part of 'core:c')?")},
+	{str_lit("signed"),    str_lit("'c.int' (which is part of 'core:c')?")},
+
+	{str_lit("size_t"),    str_lit("'uint', or 'c.size_t' (which is part of 'core:c')?")},
+	{str_lit("ssize_t"),   str_lit("'int', or 'c.ssize_t' (which is part of 'core:c')?")},
+
+	{str_lit("uintptr_t"), str_lit("'uintptr'?")},
+	{str_lit("intptr_t"),  str_lit("'uintptr' or `int` or something else?")},
+	{str_lit("ptrdiff_t"), str_lit("'int' or 'c.ptrdiff_t' (which is part of 'core:c')?")},
+	{str_lit("intmax_t"),  str_lit("'c.intmax_t' (which is part of 'core:c')?")},
+	{str_lit("uintmax_t"), str_lit("'c.uintmax_t' (which is part of 'core:c')?")},
+
+	{str_lit("uint8_t"),   str_lit("'u8'?")},
+	{str_lit("int8_t"),    str_lit("'i8'?")},
+	{str_lit("uint16_t"),  str_lit("'u16'?")},
+	{str_lit("int16_t"),   str_lit("'i16'?")},
+	{str_lit("uint32_t"),  str_lit("'u32'?")},
+	{str_lit("int32_t"),   str_lit("'i32'?")},
+	{str_lit("uint64_t"),  str_lit("'u64'?")},
+	{str_lit("int64_t"),   str_lit("'i64'?")},
+	{str_lit("uint128_t"), str_lit("'u128'?")},
+	{str_lit("int128_t"),  str_lit("'i128'?")},
+
+	{str_lit("float32"),   str_lit("'f32'?")},
+	{str_lit("float64"),   str_lit("'f64'?")},
+	{str_lit("float32_t"), str_lit("'f32'?")},
+	{str_lit("float64_t"), str_lit("'f64'?")},
+};
+
 gb_internal Entity *check_ident(CheckerContext *c, Operand *o, Ast *n, Type *named_type, Type *type_hint, bool allow_import_name) {
 	GB_ASSERT(n->kind == Ast_Ident);
 	o->mode = Addressing_Invalid;
@@ -1539,7 +1588,16 @@ gb_internal Entity *check_ident(CheckerContext *c, Operand *o, Ast *n, Type *nam
 		if (is_blank_ident(name)) {
 			error(n, "'_' cannot be used as a value");
 		} else {
+			ERROR_BLOCK();
 			error(n, "Undeclared name: %.*s", LIT(name));
+
+			// NOTE(bill): Loads of checks for C programmers
+
+			for (CIdentSuggestion const &suggestion : c_ident_suggestions) {
+				if (name == suggestion.name) {
+					error_line("\tSuggestion: Did you mean %s\n", LIT(suggestion.msg));
+				}
+			}
 		}
 		o->type = t_invalid;
 		o->mode = Addressing_Invalid;
@@ -8485,18 +8543,26 @@ gb_internal void check_compound_literal_field_values(CheckerContext *c, Slice<As
 			continue;
 		}
 		ast_node(fv, FieldValue, elem);
-		if (fv->field->kind != Ast_Ident) {
-			gbString expr_str = expr_to_string(fv->field);
+		Ast *ident = fv->field;
+		if (ident->kind == Ast_ImplicitSelectorExpr) {
+			gbString expr_str = expr_to_string(ident);
+			error(ident, "Field names do not start with a '.', remove the '.' in structure literal", expr_str);
+			gb_string_free(expr_str);
+
+			ident = ident->ImplicitSelectorExpr.selector;
+		}
+		if (ident->kind != Ast_Ident) {
+			gbString expr_str = expr_to_string(ident);
 			error(elem, "Invalid field name '%s' in structure literal", expr_str);
 			gb_string_free(expr_str);
 			continue;
 		}
-		String name = fv->field->Ident.token.string;
+		String name = ident->Ident.token.string;
 
 		Selection sel = lookup_field(type, name, o->mode == Addressing_Type);
 		bool is_unknown = sel.entity == nullptr;
 		if (is_unknown) {
-			error(fv->field, "Unknown field '%.*s' in structure literal", LIT(name));
+			error(ident, "Unknown field '%.*s' in structure literal", LIT(name));
 			continue;
 		}
 
@@ -8510,24 +8576,24 @@ gb_internal void check_compound_literal_field_values(CheckerContext *c, Slice<As
 		}
 
 
-		add_entity_use(c, fv->field, field);
+		add_entity_use(c, ident, field);
 		if (string_set_update(&fields_visited, name)) {
 			if (sel.index.count > 1) {
 				if (String *found = string_map_get(&fields_visited_through_raw_union, sel.entity->token.string)) {
-					error(fv->field, "Field '%.*s' is already initialized due to a previously assigned struct #raw_union field '%.*s'", LIT(sel.entity->token.string), LIT(*found));
+					error(ident, "Field '%.*s' is already initialized due to a previously assigned struct #raw_union field '%.*s'", LIT(sel.entity->token.string), LIT(*found));
 				} else {
-					error(fv->field, "Duplicate or reused field '%.*s' in %.*s", LIT(sel.entity->token.string), LIT(assignment_str));
+					error(ident, "Duplicate or reused field '%.*s' in %.*s", LIT(sel.entity->token.string), LIT(assignment_str));
 				}
 			} else {
-				error(fv->field, "Duplicate field '%.*s' in %.*s", LIT(field->token.string), LIT(assignment_str));
+				error(ident, "Duplicate field '%.*s' in %.*s", LIT(field->token.string), LIT(assignment_str));
 			}
 			continue;
 		} else if (String *found = string_map_get(&fields_visited_through_raw_union, sel.entity->token.string)) {
-			error(fv->field, "Field '%.*s' is already initialized due to a previously assigned struct #raw_union field '%.*s'", LIT(sel.entity->token.string), LIT(*found));
+			error(ident, "Field '%.*s' is already initialized due to a previously assigned struct #raw_union field '%.*s'", LIT(sel.entity->token.string), LIT(*found));
 			continue;
 		}
 		if (sel.indirect) {
-			error(fv->field, "Cannot assign to the %d-nested anonymous indirect field '%.*s' in a %.*s", cast(int)sel.index.count-1, LIT(name), LIT(assignment_str));
+			error(ident, "Cannot assign to the %d-nested anonymous indirect field '%.*s' in a %.*s", cast(int)sel.index.count-1, LIT(name), LIT(assignment_str));
 			continue;
 		}
 
